@@ -10,6 +10,7 @@ import {
   Users,
   FileWarning,
   ArrowRight,
+  Check,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useOrderStore } from '@/store/orderStore';
@@ -87,9 +88,11 @@ interface OrderClosureKanbanProps {
   className?: string;
   selectedStage?: PipelineKey | null;
   onStageClick?: (key: PipelineKey | null, statuses: OrderStatus[]) => void;
+  selectedTeamId?: string | null;
+  onTeamClick?: (teamId: string | null) => void;
 }
 
-export default function OrderClosureKanban({ className, selectedStage, onStageClick }: OrderClosureKanbanProps) {
+export default function OrderClosureKanban({ className, selectedStage, onStageClick, selectedTeamId, onTeamClick }: OrderClosureKanbanProps) {
   const orders = useOrderStore((s) => s.orders);
   const diseases = useDiseaseStore((s) => s.diseases);
   const { teams, getTeamName } = useDictStore();
@@ -253,56 +256,77 @@ export default function OrderClosureKanban({ className, selectedStage, onStageCl
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            {teamBacklog.map((t) => (
-              <div
-                key={t.teamId}
-                className={cn(
-                  'p-3.5 rounded-lg border transition-all',
-                  t.overdue > 0
-                    ? 'border-red-200 bg-red-50/40 hover:bg-red-50/70'
-                    : t.backlog > 6
-                    ? 'border-amber-200 bg-amber-50/40 hover:bg-amber-50/70'
-                    : 'border-neutral-200 bg-neutral-50/40 hover:bg-neutral-50/70'
-                )}
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <div className="text-sm font-semibold text-neutral-800">
-                    {getTeamName(t.teamId)}
-                  </div>
-                  {t.overdue > 0 && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-[11px] font-medium">
-                      <FileWarning className="w-3 h-3" />
-                      超期 {t.overdue}
+            {teamBacklog.map((t) => {
+              const isSelected = selectedTeamId === t.teamId;
+              return (
+                <button
+                  type="button"
+                  key={t.teamId}
+                  onClick={() => onTeamClick?.(isSelected ? null : t.teamId)}
+                  className={cn(
+                    'w-full text-left p-3.5 rounded-lg border transition-all relative group',
+                    t.overdue > 0
+                      ? isSelected
+                        ? 'border-red-400 bg-red-50/70 ring-2 ring-red-300 shadow'
+                        : 'border-red-200 bg-red-50/40 hover:bg-red-50/70'
+                      : t.backlog > 6
+                        ? isSelected
+                          ? 'border-amber-400 bg-amber-50/70 ring-2 ring-amber-300 shadow'
+                          : 'border-amber-200 bg-amber-50/40 hover:bg-amber-50/70'
+                        : isSelected
+                          ? 'border-primary-400 bg-primary-50/70 ring-2 ring-primary-300 shadow'
+                          : 'border-neutral-200 bg-neutral-50/40 hover:bg-neutral-50/70'
+                  )}
+                >
+                  {isSelected && (
+                    <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-primary-500 text-white flex items-center justify-center shadow">
+                      <Check className="w-3 h-3" />
                     </span>
                   )}
-                </div>
-
-                <div className="h-1.5 w-full bg-white rounded-full overflow-hidden mb-2">
-                  <div
-                    className={cn(
-                      'h-full rounded-full transition-all',
-                      t.backlog >= 6 ? 'bg-amber-500' : 'bg-cyan-500'
+                  <div className="flex items-center justify-between mb-2 pr-1">
+                    <div className="text-sm font-semibold text-neutral-800 flex items-center gap-1.5">
+                      {getTeamName(t.teamId)}
+                      {onTeamClick && (
+                        <span className="text-[10px] text-neutral-400 group-hover:text-neutral-600">
+                          点击筛选
+                        </span>
+                      )}
+                    </div>
+                    {t.overdue > 0 && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-[11px] font-medium">
+                        <FileWarning className="w-3 h-3" />
+                        超期 {t.overdue}
+                      </span>
                     )}
-                    style={{ width: `${(t.backlog / maxBacklog) * 100}%` }}
-                  />
-                </div>
+                  </div>
 
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  <div>
-                    <div className="text-[10px] text-neutral-500 mb-0.5">积压</div>
-                    <div className="text-sm font-bold tabular-nums text-neutral-800">{t.backlog}</div>
+                  <div className="h-1.5 w-full bg-white rounded-full overflow-hidden mb-2">
+                    <div
+                      className={cn(
+                        'h-full rounded-full transition-all',
+                        isSelected ? 'bg-primary-500' : t.backlog >= 6 ? 'bg-amber-500' : 'bg-cyan-500'
+                      )}
+                      style={{ width: `${(t.backlog / maxBacklog) * 100}%` }}
+                    />
                   </div>
-                  <div>
-                    <div className="text-[10px] text-neutral-500 mb-0.5">施工</div>
-                    <div className="text-sm font-medium tabular-nums text-cyan-700">{t.inprogress}</div>
+
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div>
+                      <div className="text-[10px] text-neutral-500 mb-0.5">积压</div>
+                      <div className="text-sm font-bold tabular-nums text-neutral-800">{t.backlog}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-neutral-500 mb-0.5">施工</div>
+                      <div className="text-sm font-medium tabular-nums text-cyan-700">{t.inprogress}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-neutral-500 mb-0.5">整改</div>
+                      <div className="text-sm font-medium tabular-nums text-red-700">{t.rejected}</div>
+                    </div>
                   </div>
-                  <div>
-                    <div className="text-[10px] text-neutral-500 mb-0.5">整改</div>
-                    <div className="text-sm font-medium tabular-nums text-red-700">{t.rejected}</div>
-                  </div>
-                </div>
-              </div>
-            ))}
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>

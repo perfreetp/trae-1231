@@ -10,6 +10,8 @@ import {
   Check,
   Plus,
   X,
+  AlertTriangle,
+  AlertCircle,
 } from 'lucide-react';
 import type { MaterialUsage, ReviewLog, WorkOrder } from '@/shared/types';
 import { useDictStore } from '@/store/dictStore';
@@ -20,6 +22,7 @@ import { cn } from '@/lib/utils';
 import Select, { type SelectOption } from '@/components/ui/Select';
 import Input from '@/components/ui/Input';
 import Button from '@/components/ui/Button';
+import Badge from '@/components/ui/Badge';
 import MaterialTable from './MaterialTable';
 
 interface ReviewFormProps {
@@ -27,6 +30,10 @@ interface ReviewFormProps {
   onSuccess?: () => void;
   onCancel?: () => void;
   className?: string;
+  reviewRound?: number;
+  lastRejectReason?: string | null;
+  lastRejectScore?: number | null;
+  lastRejectOpinion?: string | null;
 }
 
 const steps = [
@@ -37,10 +44,11 @@ const steps = [
   { key: 'photo', label: '现场照片', icon: Camera },
 ];
 
-export default function ReviewForm({ orderId, onSuccess, onCancel, className }: ReviewFormProps) {
+export default function ReviewForm({ orderId, onSuccess, onCancel, className, reviewRound = 1, lastRejectReason, lastRejectScore, lastRejectOpinion }: ReviewFormProps) {
   const { teams, getRoadName } = useDictStore();
   const { orders } = useOrderStore();
   const { addReview } = useReviewStore();
+  const isRework = reviewRound > 1;
 
   const [currentStep, setCurrentStep] = useState(0);
   const [submitting, setSubmitting] = useState(false);
@@ -153,7 +161,15 @@ export default function ReviewForm({ orderId, onSuccess, onCancel, className }: 
       <div className="mb-8">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h2 className="text-lg font-semibold text-neutral-900">现场复核登记</h2>
+            <h2 className="text-lg font-semibold text-neutral-900 flex items-center gap-2 flex-wrap">
+              现场复核登记
+              <Badge variant={isRework ? 'warning' : 'info'} size="sm">
+                第{reviewRound}轮复核
+              </Badge>
+              {isRework && (
+                <Badge variant="danger" size="sm">返工验收退回单</Badge>
+              )}
+            </h2>
             {order && (
               <p className="mt-1 text-sm text-neutral-500">
                 工单 {order.id} · {team?.name}
@@ -161,6 +177,46 @@ export default function ReviewForm({ orderId, onSuccess, onCancel, className }: 
             )}
           </div>
         </div>
+
+        {isRework && lastRejectReason && (
+          <div className="mb-6 p-4 rounded-lg bg-red-50/60 border border-red-200 space-y-2">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />
+              <span className="text-sm font-semibold text-red-800">
+                上一轮（第{reviewRound - 1}轮）验收退回原因与整改重点
+              </span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pl-6">
+              <div>
+                <div className="text-[11px] text-neutral-500 mb-1 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" />
+                  退回原因（需整改项）
+                </div>
+                <p className="text-sm text-neutral-800 font-medium bg-white rounded p-2 border border-red-100 leading-relaxed">
+                  {lastRejectReason}
+                </p>
+              </div>
+              <div>
+                <div className="text-[11px] text-neutral-500 mb-1 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" />
+                  上次验收意见 / 评分
+                </div>
+                <p className="text-sm text-neutral-700 bg-white rounded p-2 border border-neutral-100 leading-relaxed">
+                  {lastRejectScore != null && (
+                    <span className="inline-block mr-2 px-1.5 py-0.5 rounded bg-red-100 text-red-700 text-[11px] font-semibold">
+                      {lastRejectScore}分
+                    </span>
+                  )}
+                  {lastRejectOpinion || '--'}
+                </p>
+              </div>
+            </div>
+            <div className="pl-6 text-[11px] text-amber-700 font-medium flex items-center gap-1">
+              <AlertTriangle className="w-3 h-3" />
+              提示：本次复核需在「处置措施」中说明上述问题的整改情况，否则验收环节可能再次退回
+            </div>
+          </div>
+        )}
 
         <div className="relative">
           <div className="flex items-start justify-between">

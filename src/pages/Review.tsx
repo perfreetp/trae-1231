@@ -127,6 +127,14 @@ export default function Review() {
   const historyReviews = selectedOrderId ? getAllReviewsByOrderId(selectedOrderId) : [];
   const latestReview = historyReviews[0];
   const selectedReworkCount = selectedOrderId ? getReworkCount(selectedOrderId) : 0;
+  const reviewRound = selectedReworkCount + 1;
+
+  const lastRejectAcceptance = useMemo(() => {
+    if (!selectedOrderId) return null;
+    const list = useAcceptanceStore.getState().getAllByOrderId(selectedOrderId);
+    const rejects = list.filter((r) => r.result === 'rejected');
+    return rejects.length > 0 ? rejects[rejects.length - 1] : null;
+  }, [selectedOrderId]);
 
   const roadOptions: SelectOption[] = roads.map((r) => ({
     value: r.id,
@@ -291,6 +299,9 @@ export default function Review() {
                     <div>
                       <h3 className="text-base font-semibold text-neutral-900 flex items-center gap-2 flex-wrap">
                         病害基本信息
+                        <Badge variant={selectedReworkCount > 0 ? 'warning' : 'info'} size="sm">
+                          第{reviewRound}轮复核
+                        </Badge>
                         {selectedReworkCount > 0 && (
                           <Badge variant="danger" size="sm" icon={<RefreshCw className="w-3.5 h-3.5" />}>
                             返工工单 · 已退回{selectedReworkCount}次
@@ -321,6 +332,35 @@ export default function Review() {
                       </Badge>
                     </div>
                   </div>
+
+                  {selectedReworkCount > 0 && lastRejectAcceptance?.rejectReason && (
+                    <div className="mx-5 mt-4 mb-2 p-4 bg-gradient-to-r from-red-50 to-amber-50 border border-red-200 rounded-lg space-y-2">
+                      <div className="flex items-center gap-2 text-sm">
+                        <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />
+                        <span className="font-semibold text-red-800">第{reviewRound - 1}轮验收退回提示（需重点整改）</span>
+                      </div>
+                      <div className="pl-6 grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                          <div className="text-[11px] text-neutral-500 mb-1">上次验收退回原因</div>
+                          <p className="text-sm text-neutral-800 font-medium bg-white/80 rounded p-2 border border-red-100">
+                            {lastRejectAcceptance.rejectReason}
+                          </p>
+                        </div>
+                        <div>
+                          <div className="text-[11px] text-neutral-500 mb-1">上次验收意见 / 评分</div>
+                          <p className="text-sm text-neutral-700 bg-white/80 rounded p-2 border border-neutral-100">
+                            <span className="inline-block mr-2 px-1.5 py-0.5 rounded bg-red-100 text-red-700 text-[11px] font-semibold">
+                              {lastRejectAcceptance.qualityScore}分
+                            </span>
+                            {lastRejectAcceptance.opinion || '--'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="pl-6 text-[11px] text-amber-700 font-medium">
+                        ⚠ 本次复核请重点关注上述问题是否已彻底整改，否则将再次退回
+                      </div>
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-1 md:grid-cols-5 gap-0">
                     <div className="md:col-span-2 aspect-square md:aspect-auto bg-neutral-100 relative overflow-hidden min-h-[240px]">
@@ -540,6 +580,10 @@ export default function Review() {
                   orderId={selectedOrder.order.id}
                   onSuccess={handleReviewSuccess}
                   onCancel={() => setSelectedOrderId(null)}
+                  reviewRound={reviewRound}
+                  lastRejectReason={lastRejectAcceptance?.rejectReason || null}
+                  lastRejectScore={lastRejectAcceptance?.qualityScore || null}
+                  lastRejectOpinion={lastRejectAcceptance?.opinion || null}
                 />
               </>
             )}

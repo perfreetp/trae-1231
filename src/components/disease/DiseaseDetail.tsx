@@ -23,6 +23,11 @@ import {
   Phone,
   ShieldAlert,
   Package,
+  BarChart3,
+  TimerOff,
+  Banknote,
+  TrendingUp,
+  XCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Badge from '@/components/ui/Badge';
@@ -147,6 +152,82 @@ export default function DiseaseDetail({
     () => (order ? getReworkCount(order.id) : 0),
     [order, getReworkCount]
   );
+
+  interface ReviewRound {
+    round: number;
+    dispatch?: DispatchRecord;
+    review?: ReviewLog;
+    acceptance?: AcceptanceRecord;
+    status: 'planning' | 'processing' | 'reviewed' | 'passed' | 'rejected' | 'waiting';
+    plannedStart?: string;
+    plannedEnd?: string;
+    teamId?: string;
+    isOverdue: boolean;
+    overdueHours: number;
+    materialCost: number;
+    dispatcher?: string;
+    remark?: string;
+  }
+
+  const reviewRounds = useMemo<ReviewRound[]>(() => {
+    if (!order) return [];
+    const dispatchList = order.dispatchHistory || [];
+    const dispTop = { teamId: order.teamId, plannedStart: order.plannedStart, plannedEnd: order.plannedEnd, dispatcher: order.dispatcher, remark: order.remark };
+    const total = Math.max(
+      dispatchList.length,
+      allReviews.length,
+      allAcceptances.length,
+      reworkCount + (disease?.status === 'accepted' ? 0 : 1)
+    );
+    const rounds: ReviewRound[] = [];
+    for (let i = 0; i < Math.max(1, total); i++) {
+      const d = dispatchList[i] || (i === 0 && dispatchList.length === 0 ? { ...dispTop } as any : undefined);
+      const r = allReviews[i];
+      const a = allAcceptances[i];
+      const teamId = d?.teamId;
+      const plannedEnd = d?.plannedEnd;
+      const completedAt = r?.completedAt;
+      let overdueHours = 0;
+      let isOverdue = false;
+      if (plannedEnd && completedAt) {
+        const diff = new Date(completedAt).getTime() - new Date(plannedEnd).getTime();
+        if (diff > 0) {
+          isOverdue = true;
+          overdueHours = Math.round(diff / 3600000);
+        }
+      } else if (plannedEnd && disease && ['assigned', 'processing', 'reviewed', 'rejected'].includes(disease.status)) {
+        const now = Date.now();
+        const diff = now - new Date(plannedEnd).getTime();
+        if (diff > 0) {
+          isOverdue = true;
+          overdueHours = Math.round(diff / 3600000);
+        }
+      }
+      const materialCost = r ? r.materials.reduce((s, m) => s + m.subtotal, 0) : 0;
+      let status: ReviewRound['status'] = 'planning';
+      if (a?.result === 'passed') status = 'passed';
+      else if (a?.result === 'rejected') status = 'rejected';
+      else if (r?.completedAt) status = 'reviewed';
+      else if (r?.arrivedAt) status = 'processing';
+      else if (!d && (i > 0 || !order.teamId)) status = 'waiting';
+      rounds.push({
+        round: i + 1,
+        dispatch: d,
+        review: r,
+        acceptance: a,
+        status,
+        plannedStart: d?.plannedStart,
+        plannedEnd: d?.plannedEnd,
+        teamId,
+        isOverdue,
+        overdueHours,
+        materialCost,
+        dispatcher: d?.dispatcher,
+        remark: d?.remark,
+      });
+    }
+    return rounds;
+  }, [order, allReviews, allAcceptances, reworkCount, disease]);
 
   const typeInfo = useMemo(() => {
     if (!disease) return null;
@@ -886,6 +967,195 @@ export default function DiseaseDetail({
                   </div>
                 )}
               </section>
+
+              {order && reviewRounds.length > 0 && (
+                <section>
+                  <SectionTitle title="工单闭环复盘" icon={BarChart3} />
+                  <p className="mt-2 mb-3 text-xs text-neutral-500">
+                    按轮次对比计划、执行、验收全流程数据，快速定位超期与退回环节
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {reviewRounds.map((rd) => {
+                      const statusConfig: Record<ReviewRound['status'], { label: string; variant: 'success' | 'danger' | 'warning' | 'info' | 'neutral' }> = {
+                        passed: { label: '验收通过', variant: 'success' },
+                        rejected: { label: '验收退回', variant: 'danger' },
+                        reviewed: { label: '待验收', variant: 'warning' },
+                        processing: { label: '处置中', variant: 'info' },
+                        planning: { label: '已派单', variant: 'info' },
+                        waiting: { label: '待派单', variant: 'neutral' },
+                      };
+                      const cfg = statusConfig[rd.status];
+                      const cardBorder = rd.status === 'passed'
+                        ? 'border-green-200 bg-gradient-to-br from-green-50/60 to-white'
+                        : rd.status === 'rejected'
+                          ? 'border-red-200 bg-gradient-to-br from-red-50/60 to-white'
+                          : rd.status === 'reviewed'
+                            ? 'border-amber-200 bg-gradient-to-br from-amber-50/60 to-white'
+                            : rd.status === 'processing'
+                              ? 'border-blue-200 bg-gradient-to-br from-blue-50/60 to-white'
+                              : rd.status === 'planning'
+                                ? 'border-violet-200 bg-gradient-to-br from-violet-50/60 to-white'
+                                : 'border-neutral-200 bg-gradient-to-br from-neutral-50/60 to-white';
+                      return (
+                        <div key={rd.round} className={cn('rounded-lg border p-4 space-y-3 relative', cardBorder)}>
+                          {rd.isOverdue && (
+                            <span className="absolute -top-2 -right-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-500 text-white text-[10px] font-semibold shadow">
+                              <TimerOff className="w-3 h-3" />
+                              超期 {rd.overdueHours >= 24 ? `${(rd.overdueHours / 24).toFixed(1)}天` : `${rd.overdueHours}h`}
+                            </span>
+                          )}
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Badge variant="info" size="sm">第 {rd.round} 轮</Badge>
+                              <Badge variant={cfg.variant} size="sm">{cfg.label}</Badge>
+                              {rd.status === 'rejected' && (
+                                <Badge variant="danger" size="sm" icon={<XCircle className="w-3 h-3" />}>需返工</Badge>
+                              )}
+                              {rd.round > 1 && rd.status === 'waiting' && (
+                                <Badge variant="warning" size="sm">等待重新派单</Badge>
+                              )}
+                            </div>
+                            {rd.materialCost > 0 && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[11px] font-medium border border-emerald-200">
+                                <Banknote className="w-3 h-3" />
+                                材料费 ¥{rd.materialCost.toFixed(2)}
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3 text-xs">
+                            <div>
+                              <div className="text-[11px] text-neutral-400 mb-1 flex items-center gap-1">
+                                <Calendar className="w-3 h-3" /> 计划时间
+                              </div>
+                              <div className="text-neutral-700 tabular-nums leading-snug">
+                                <div>{formatDateTime(rd.plannedStart) || '--'}</div>
+                                <div className="text-neutral-400">→ {formatDateTime(rd.plannedEnd) || '--'}</div>
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-[11px] text-neutral-400 mb-1 flex items-center gap-1">
+                                <Clock className="w-3 h-3" /> 实际执行
+                              </div>
+                              <div className="text-neutral-700 tabular-nums leading-snug">
+                                <div>到场：{rd.review ? formatDateTime(rd.review.arrivedAt) : '--'}</div>
+                                <div className="text-neutral-400">完成：{rd.review ? formatDateTime(rd.review.completedAt) : '--'}</div>
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-[11px] text-neutral-400 mb-1 flex items-center gap-1">
+                                <User className="w-3 h-3" /> 处置班组
+                              </div>
+                              <div className="text-neutral-700 font-medium">
+                                {rd.teamId ? getTeamName(rd.teamId) : '--'}
+                              </div>
+                              {rd.dispatcher && (
+                                <div className="text-[11px] text-neutral-400 mt-0.5">
+                                  派单：{rd.dispatcher}
+                                </div>
+                              )}
+                            </div>
+                            <div>
+                              <div className="text-[11px] text-neutral-400 mb-1 flex items-center gap-1">
+                                <BadgeCheck className="w-3 h-3" /> 验收结果
+                              </div>
+                              <div className="text-neutral-700 leading-snug">
+                                {rd.acceptance ? (
+                                  rd.acceptance.result === 'passed' ? (
+                                    <span className="text-green-700 font-medium">
+                                      通过 · {rd.acceptance.qualityScore}分
+                                    </span>
+                                  ) : (
+                                    <span className="text-red-700 font-medium">
+                                      退回 · {rd.acceptance.qualityScore}分
+                                    </span>
+                                  )
+                                ) : rd.status === 'reviewed' ? (
+                                  <span className="text-amber-700">验收中...</span>
+                                ) : rd.status === 'waiting' ? (
+                                  <span className="text-neutral-500">未开始</span>
+                                ) : (
+                                  <span className="text-neutral-500">未提交</span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {rd.acceptance?.rejectReason && (
+                            <div className="p-2.5 rounded-md bg-red-100/70 border border-red-200">
+                              <div className="flex items-start gap-1.5">
+                                <AlertTriangle className="w-3.5 h-3.5 text-red-500 flex-shrink-0 mt-0.5" />
+                                <div>
+                                  <div className="text-[11px] font-semibold text-red-700 mb-0.5">退回原因</div>
+                                  <p className="text-xs text-red-800 leading-relaxed">{rd.acceptance.rejectReason}</p>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {rd.remark && (
+                            <div className="p-2.5 rounded-md bg-white/70 border border-violet-100">
+                              <div className="text-[11px] font-medium text-violet-700 mb-0.5 flex items-center gap-1">
+                                <FileText className="w-3 h-3" /> 派单备注
+                              </div>
+                              <p className="text-xs text-neutral-700 leading-relaxed">{rd.remark}</p>
+                            </div>
+                          )}
+
+                          {rd.review?.materials && rd.review.materials.length > 0 && (
+                            <div className="pt-2 border-t border-neutral-200/60">
+                              <div className="text-[11px] text-neutral-500 mb-1.5 flex items-center gap-1">
+                                <Package className="w-3 h-3" /> 材料清单（{rd.review.materials.length}项）
+                              </div>
+                              <div className="flex flex-wrap gap-1">
+                                {rd.review.materials.slice(0, 4).map((m) => (
+                                  <span key={m.id} className="inline-flex items-center px-1.5 py-0.5 rounded bg-white text-[10px] text-neutral-700 border border-neutral-200">
+                                    {m.materialName} {m.quantity}{m.unit}
+                                  </span>
+                                ))}
+                                {rd.review.materials.length > 4 && (
+                                  <span className="text-[10px] text-neutral-500 px-1">+{rd.review.materials.length - 4}项</span>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {reviewRounds.some(r => r.isOverdue) || reviewRounds.some(r => r.status === 'rejected') ? (
+                    <div className="mt-4 p-3 rounded-lg bg-neutral-50 border border-neutral-200 text-[11px] text-neutral-600 space-y-1">
+                      {reviewRounds.findIndex(r => r.isOverdue) >= 0 && (
+                        <div className="flex items-start gap-1.5">
+                          <TimerOff className="w-3.5 h-3.5 text-red-500 flex-shrink-0 mt-0.5" />
+                          <span>
+                            <span className="font-medium text-red-700">超期轮次：</span>
+                            第 {reviewRounds.filter(r => r.isOverdue).map(r => `${r.round}轮`).join('、')}，重点关注工期管控
+                          </span>
+                        </div>
+                      )}
+                      {reviewRounds.findIndex(r => r.status === 'rejected') >= 0 && (
+                        <div className="flex items-start gap-1.5">
+                          <XCircle className="w-3.5 h-3.5 text-red-500 flex-shrink-0 mt-0.5" />
+                          <span>
+                            <span className="font-medium text-red-700">退回轮次：</span>
+                            第 {reviewRounds.filter(r => r.status === 'rejected').map(r => `${r.round}轮`).join('、')}，建议复核处置流程与班组能力
+                          </span>
+                        </div>
+                      )}
+                      {reviewRounds.length > 1 && (
+                        <div className="flex items-start gap-1.5">
+                          <TrendingUp className="w-3.5 h-3.5 text-amber-500 flex-shrink-0 mt-0.5" />
+                          <span>
+                            <span className="font-medium text-amber-700">累计返工：</span>
+                            {reviewRounds.length - 1}次，累计材料费用 ¥{reviewRounds.reduce((s, r) => s + r.materialCost, 0).toFixed(2)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
+                </section>
+              )}
 
               {order && (
                 <section>

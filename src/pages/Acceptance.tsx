@@ -43,7 +43,7 @@ interface PendingItem {
 }
 
 export default function Acceptance() {
-  const { getPendingAcceptance, records, getReworkCount, selectedOrderId, setSelectedOrderId } = useAcceptanceStore();
+  const { getPendingAcceptance, records, getReworkCount, selectedOrderId, setSelectedOrderId, getAllByOrderId } = useAcceptanceStore();
   const { diseases } = useDiseaseStore();
   const { orders } = useOrderStore();
   const { reviews, getReviewByOrderId } = useReviewStore();
@@ -52,7 +52,8 @@ export default function Acceptance() {
   const [activeTab, setActiveTab] = useState<string>('pending');
   const [showSuccess, setShowSuccess] = useState(false);
   const [successResult, setSuccessResult] = useState<'passed' | 'rejected' | null>(null);
-  const [successRecordId, setSuccessRecordId] = useState<string | null>(null);
+  const [successRecord, setSuccessRecord] = useState<AcceptanceRecord | null>(null);
+  const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
 
   useEffect(() => {
     useAcceptanceStore.getState()._ensureInit();
@@ -97,9 +98,14 @@ export default function Acceptance() {
           }
         : null;
     } else {
-      const target = selectedOrderId
-        ? acceptedList.find((a) => a.record.orderId === selectedOrderId)
-        : acceptedList[0];
+      let target: typeof acceptedList[number] | undefined;
+      if (selectedRecordId) {
+        target = acceptedList.find((a) => a.record.id === selectedRecordId);
+      }
+      if (!target && selectedOrderId) {
+        target = acceptedList.find((a) => a.record.orderId === selectedOrderId);
+      }
+      if (!target) target = acceptedList[0];
       if (!target) return null;
       const review = getReviewByOrderId(target.record.orderId);
       return {
@@ -112,25 +118,30 @@ export default function Acceptance() {
         reworkHistory: records.filter((r) => r.orderId === target.record.orderId && r.result === 'rejected'),
       };
     }
-  }, [activeTab, selectedOrderId, pendingList, acceptedList, records, getReviewByOrderId, getReworkCount]);
+  }, [activeTab, selectedOrderId, selectedRecordId, pendingList, acceptedList, records, getReviewByOrderId, getReworkCount]);
 
   const handleAcceptanceSuccess = () => {
-    const lastRecord = records[records.length - 1];
+    const sorted = [...records].sort((a, b) => new Date(b.inspectedAt).getTime() - new Date(a.inspectedAt).getTime());
+    const lastRecord = sorted[0];
     setSuccessResult(lastRecord?.result || 'passed');
-    setSuccessRecordId(lastRecord?.orderId || null);
+    setSuccessRecord(lastRecord || null);
     setShowSuccess(true);
     if (lastRecord?.result === 'rejected') {
       setTimeout(() => {
         setShowSuccess(false);
         setSuccessResult(null);
+        setSuccessRecord(null);
         setActiveTab('history');
+        setSelectedRecordId(lastRecord.id);
         setSelectedOrderId(lastRecord.orderId);
       }, 3000);
     } else {
       setTimeout(() => {
         setShowSuccess(false);
         setSuccessResult(null);
+        setSuccessRecord(null);
         setSelectedOrderId(null);
+        setSelectedRecordId(null);
       }, 2500);
     }
   };
@@ -196,8 +207,12 @@ export default function Acceptance() {
                         key={item.record.id}
                         record={item.record}
                         disease={item.disease}
-                        selected={selectedOrderId === item.record.orderId}
-                        onClick={() => setSelectedOrderId(item.record.orderId)}
+                        selected={selectedRecordId === item.record.id || (!selectedRecordId && selectedOrderId === item.record.orderId)}
+                        isJustSubmitted={successRecord?.id === item.record.id && activeTab === 'history'}
+                        onClick={() => {
+                          setSelectedRecordId(item.record.id);
+                          setSelectedOrderId(item.record.orderId);
+                        }}
                         getRoadName={getRoadName}
                         getTypeName={getTypeName}
                       />
@@ -213,16 +228,45 @@ export default function Acceptance() {
           {showSuccess ? (
             <SuccessBanner
               result={successResult!}
-              record={successRecordId ? records[records.length - 1] : undefined}
+              record={successRecord || undefined}
               onViewHistory={() => {
-                const lastRecord = records[records.length - 1];
+                const last = successRecord;
                 setShowSuccess(false);
                 setActiveTab('history');
-                if (lastRecord) setSelectedOrderId(lastRecord.orderId);
+                if (last) {
+                  setSelectedRecordId(last.id);
+                  setSelectedOrderId(last.orderId);
+                }
               }}
             />
           ) : selected ? (
             <div className="space-y-6 pb-8">
+              {activeTab === 'pending' && selected.reworkCount > 0 && (
+                <div className="bg-gradient-to-r from-amber-50 to-red-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
+                  <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded bg-amber-100 text-amber-800 text-[11px] font-semibold border border-amber-200">
+                        第 {selected.reworkCount + 1} 轮验收
+                      </span>
+                      <Badge variant="danger" size="sm">已返工 {selected.reworkCount} 次</Badge>
+                    </div>
+                    <p className="text-xs text-neutral-600 leading-relaxed">
+                      本工单为<span className="font-medium text-red-600">返工验收</span>，前 {selected.reworkCount} 次验收未通过，请重点关注上次退回的问题是否已整改
+                    </p>
+                    {selected.reworkHistory && selected.reworkHistory.length > 0 && (() => {
+                      const lastReject = selected.reworkHistory[selected.reworkHistory.length - 1];
+                      return lastReject?.rejectReason ? (
+                        <div className="mt-2 p-2.5 rounded-md bg-white/70 border border-amber-200 text-[11px] text-neutral-700">
+                          <span className="font-semibold text-red-700 mr-1">上次退回原因：</span>
+                          {lastReject.rejectReason}
+                        </div>
+                      ) : null;
+                    })()}
+                  </div>
+                </div>
+              )}
+
               <div className="bg-white rounded-lg border border-neutral-200 overflow-hidden">
                 <div className="px-6 py-4 border-b border-neutral-100 flex items-start justify-between">
                   <div>
@@ -236,6 +280,11 @@ export default function Acceptance() {
                         </>
                       )}
                       <span>病害照片对比</span>
+                      {activeTab === 'pending' && selected.reworkCount > 0 && (
+                        <Badge variant="warning" size="sm" className="ml-2">
+                          第 {selected.reworkCount + 1} 轮
+                        </Badge>
+                      )}
                     </h2>
                     <p className="text-xs text-neutral-500 mt-1">
                       左侧为病害发现时照片，右侧为维修完成后照片
@@ -435,6 +484,7 @@ function PendingListItem({
   getTypeName: (id: string) => string;
 }) {
   const reworkCount = useAcceptanceStore.getState().getReworkCount(item.orderId);
+  const acceptanceRound = reworkCount + 1;
   const levelVariant =
     item.disease?.levelId === 'critical' || item.disease?.levelId === 'severe'
       ? 'danger'
@@ -464,6 +514,9 @@ function PendingListItem({
               </span>
               <Badge variant={levelVariant} size="sm">
                 {item.disease ? getLevelName(item.disease.levelId) : '--'}
+              </Badge>
+              <Badge variant={reworkCount > 0 ? 'warning' : 'info'} size="sm">
+                第{acceptanceRound}轮验收
               </Badge>
               {reworkCount > 0 && (
                 <Badge variant="danger" size="sm">
@@ -502,6 +555,7 @@ function HistoryListItem({
   record,
   disease,
   selected,
+  isJustSubmitted,
   onClick,
   getRoadName,
   getTypeName,
@@ -509,23 +563,30 @@ function HistoryListItem({
   record: AcceptanceRecord;
   disease: Disease | undefined;
   selected: boolean;
+  isJustSubmitted?: boolean;
   onClick: () => void;
   getRoadName: (id: string) => string;
   getTypeName: (id: string) => string;
 }) {
   return (
-    <li>
+    <li className={cn(isJustSubmitted && 'animate-in fade-in slide-in-from-top-2 duration-500')}>
       <button
         type="button"
         onClick={onClick}
         className={cn(
           'w-full text-left p-4 transition-all duration-200 relative',
           'hover:bg-neutral-50',
-          selected && 'bg-primary-50/80 hover:bg-primary-50'
+          selected && 'bg-primary-50/80 hover:bg-primary-50',
+          isJustSubmitted && 'bg-amber-50/70 ring-1 ring-inset ring-amber-300'
         )}
       >
         {selected && (
           <span className="absolute left-0 top-0 bottom-0 w-1 bg-primary-600 rounded-r" />
+        )}
+        {isJustSubmitted && (
+          <span className="absolute right-3 top-3 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500 text-white text-[9px] font-medium">
+            NEW
+          </span>
         )}
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">

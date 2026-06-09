@@ -10,6 +10,9 @@ import {
   Search,
   Eye,
   AlertCircle,
+  Users,
+  X,
+  ArrowUpDown,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import PageContainer from '@/components/layout/PageContainer';
@@ -62,6 +65,7 @@ export default function Dispatch() {
   const diseases = useDiseaseStore((s) => s.diseases);
   const getRoadName = useDictStore((s) => s.getRoadName);
   const getTypeName = useDictStore((s) => s.getTypeName);
+  const getTeamName = useDictStore((s) => s.getTeamName);
 
   const [searchKeyword, setSearchKeyword] = useState('');
   const [assignModalOpen, setAssignModalOpen] = useState(false);
@@ -70,6 +74,7 @@ export default function Dispatch() {
   const [highlightOrderId, setHighlightOrderId] = useState<string | null>(null);
   const [kanbanStage, setKanbanStage] = useState<PipelineKey | null>(null);
   const [kanbanStatuses, setKanbanStatuses] = useState<OrderStatus[]>([]);
+  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
 
   const diseaseIdParam = searchParams.get('diseaseId');
 
@@ -120,6 +125,8 @@ export default function Dispatch() {
   }, [orders]);
 
   const filteredOrders = useMemo(() => {
+    const now = Date.now();
+    const diseaseMap = new Map(diseases.map((d) => [d.id, d]));
     let list: WorkOrder[];
     if (kanbanStage && kanbanStatuses.length > 0) {
       list = orders.filter((o) => kanbanStatuses.includes(o.status));
@@ -128,17 +135,37 @@ export default function Dispatch() {
     } else {
       list = orders.filter((o) => o.status === activeTab);
     }
-    if (!searchKeyword.trim()) return list;
-    const kw = searchKeyword.toLowerCase();
-    return list.filter((o) => {
-      const disease = diseases.find((d) => d.id === o.diseaseId);
-      if (!disease) return false;
-      const roadName = getRoadName(disease.roadId);
-      const typeName = getTypeName(disease.typeId);
-      const text = `${roadName} ${disease.stakeNo} ${disease.description} ${typeName} ${o.id}`.toLowerCase();
-      return text.includes(kw);
-    });
-  }, [activeTab, orders, searchKeyword, diseases, getRoadName, getTypeName, kanbanStage, kanbanStatuses]);
+    if (selectedTeamId) {
+      list = list.filter((o) => o.teamId === selectedTeamId);
+    }
+    if (searchKeyword.trim()) {
+      const kw = searchKeyword.toLowerCase();
+      list = list.filter((o) => {
+        const disease = diseases.find((d) => d.id === o.diseaseId);
+        if (!disease) return false;
+        const roadName = getRoadName(disease.roadId);
+        const typeName = getTypeName(disease.typeId);
+        const text = `${roadName} ${disease.stakeNo} ${disease.description} ${typeName} ${o.id}`.toLowerCase();
+        return text.includes(kw);
+      });
+    }
+    if (selectedTeamId) {
+      list = [...list].sort((a, b) => {
+        const da = diseaseMap.get(a.diseaseId);
+        const db = diseaseMap.get(b.diseaseId);
+        const aOverdue = da ? new Date(da.deadlineAt).getTime() < now : false;
+        const bOverdue = db ? new Date(db.deadlineAt).getTime() < now : false;
+        if (aOverdue !== bOverdue) return aOverdue ? -1 : 1;
+        const aWarn = (da?.warningFlag || 'none') === 'approaching' ? 1 : 0;
+        const bWarn = (db?.warningFlag || 'none') === 'approaching' ? 1 : 0;
+        if (aWarn !== bWarn) return bWarn - aWarn;
+        const aDue = da ? new Date(da.deadlineAt).getTime() : 0;
+        const bDue = db ? new Date(db.deadlineAt).getTime() : 0;
+        return aDue - bDue;
+      });
+    }
+    return list;
+  }, [activeTab, orders, searchKeyword, diseases, getRoadName, getTypeName, kanbanStage, kanbanStatuses, selectedTeamId]);
 
   const handleStageClick = (key: PipelineKey | null, statuses: OrderStatus[]) => {
     setKanbanStage(key);
@@ -146,6 +173,15 @@ export default function Dispatch() {
     if (key && statuses.length === 1) {
       setActiveTab(statuses[0]);
     }
+  };
+
+  const handleTeamClick = (teamId: string | null) => {
+    setSelectedTeamId(teamId);
+  };
+
+  const clearAllFilters = () => {
+    handleStageClick(null, []);
+    setSelectedTeamId(null);
   };
 
   const handleAssign = (orderId: string) => {
@@ -164,6 +200,8 @@ export default function Dispatch() {
         <OrderClosureKanban
           selectedStage={kanbanStage}
           onStageClick={handleStageClick}
+          selectedTeamId={selectedTeamId}
+          onTeamClick={handleTeamClick}
         />
 
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
@@ -221,25 +259,38 @@ export default function Dispatch() {
 
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
             <div className="xl:col-span-2">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold text-neutral-700">
-                  工单列表
-                  <span className="ml-2 text-xs text-neutral-400 font-normal">
+              <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                <h3 className="text-sm font-semibold text-neutral-700 flex items-center flex-wrap gap-2">
+                  <span>工单列表</span>
+                  <span className="text-xs text-neutral-400 font-normal">
                     共 {filteredOrders.length} 条
                   </span>
                   {kanbanStage && (
-                    <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-primary-50 text-primary-700 border border-primary-100 text-[11px] font-medium">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-primary-50 text-primary-700 border border-primary-100 text-[11px] font-medium">
                       看板筛选中
                     </span>
                   )}
+                  {selectedTeamId && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-violet-50 text-violet-700 border border-violet-100 text-[11px] font-medium">
+                      <Users className="w-3 h-3" />
+                      班组：{getTeamName(selectedTeamId)}
+                    </span>
+                  )}
+                  {selectedTeamId && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-100 text-[11px] font-medium">
+                      <ArrowUpDown className="w-3 h-3" />
+                      超期优先排序
+                    </span>
+                  )}
                 </h3>
-                {kanbanStage && (
+                {(kanbanStage || selectedTeamId) && (
                   <button
                     type="button"
-                    onClick={() => handleStageClick(null, [])}
-                    className="text-xs text-neutral-500 hover:text-primary-600 transition-colors"
+                    onClick={clearAllFilters}
+                    className="text-xs text-neutral-500 hover:text-primary-600 transition-colors inline-flex items-center gap-1"
                   >
-                    清除筛选
+                    <X className="w-3 h-3" />
+                    清除所有筛选
                   </button>
                 )}
               </div>
