@@ -13,6 +13,10 @@ import {
   Users,
   X,
   ArrowUpDown,
+  TimerOff,
+  Timer,
+  RotateCcw,
+  Check,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import PageContainer from '@/components/layout/PageContainer';
@@ -75,6 +79,14 @@ export default function Dispatch() {
   const [kanbanStage, setKanbanStage] = useState<PipelineKey | null>(null);
   const [kanbanStatuses, setKanbanStatuses] = useState<OrderStatus[]>([]);
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
+  const [filterTypeId, setFilterTypeId] = useState<string | null>(null);
+  type BacklogSortKey = 'overdue' | 'approaching' | 'rework';
+  const [backlogSort, setBacklogSort] = useState<BacklogSortKey>('overdue');
+  const backlogSortOptions: { key: BacklogSortKey; label: string; icon: typeof TimerOff; color: string }[] = [
+    { key: 'overdue', label: '超期优先', icon: TimerOff, color: 'red' },
+    { key: 'approaching', label: '临期优先', icon: Timer, color: 'amber' },
+    { key: 'rework', label: '返工次数', icon: RotateCcw, color: 'violet' },
+  ];
 
   const diseaseIdParam = searchParams.get('diseaseId');
 
@@ -137,6 +149,10 @@ export default function Dispatch() {
     }
     if (selectedTeamId) {
       list = list.filter((o) => o.teamId === selectedTeamId);
+      const backlogStatuses: OrderStatus[] = ['assigned', 'processing', 'reviewed', 'rejected'];
+      if (!kanbanStage && activeTab === 'all') {
+        list = list.filter((o) => backlogStatuses.includes(o.status));
+      }
     }
     if (searchKeyword.trim()) {
       const kw = searchKeyword.toLowerCase();
@@ -153,19 +169,38 @@ export default function Dispatch() {
       list = [...list].sort((a, b) => {
         const da = diseaseMap.get(a.diseaseId);
         const db = diseaseMap.get(b.diseaseId);
-        const aOverdue = da ? new Date(da.deadlineAt).getTime() < now : false;
-        const bOverdue = db ? new Date(db.deadlineAt).getTime() < now : false;
-        if (aOverdue !== bOverdue) return aOverdue ? -1 : 1;
-        const aWarn = (da?.warningFlag || 'none') === 'approaching' ? 1 : 0;
-        const bWarn = (db?.warningFlag || 'none') === 'approaching' ? 1 : 0;
-        if (aWarn !== bWarn) return bWarn - aWarn;
-        const aDue = da ? new Date(da.deadlineAt).getTime() : 0;
-        const bDue = db ? new Date(db.deadlineAt).getTime() : 0;
-        return aDue - bDue;
+        const aTime = da ? new Date(da.deadlineAt).getTime() : 0;
+        const bTime = db ? new Date(db.deadlineAt).getTime() : 0;
+        const aOverdue = aTime > 0 && aTime < now;
+        const bOverdue = bTime > 0 && bTime < now;
+        const aApproaching = !aOverdue && (da?.warningFlag || 'none') === 'approaching';
+        const bApproaching = !bOverdue && (db?.warningFlag || 'none') === 'approaching';
+        const aRework = reworkCountMap[a.id] || 0;
+        const bRework = reworkCountMap[b.id] || 0;
+        switch (backlogSort) {
+          case 'overdue':
+            if (aOverdue !== bOverdue) return aOverdue ? -1 : 1;
+            if (aApproaching !== bApproaching) return aApproaching ? -1 : 1;
+            if (aRework !== bRework) return bRework - aRework;
+            return aTime - bTime;
+          case 'approaching':
+            if (aOverdue && !bOverdue) return -1;
+            if (!aOverdue && bOverdue) return 1;
+            if (aApproaching !== bApproaching) return aApproaching ? -1 : 1;
+            if (aTime === 0 && bTime !== 0) return 1;
+            if (bTime === 0 && aTime !== 0) return -1;
+            return aTime - bTime;
+          case 'rework':
+            if (aRework !== bRework) return bRework - aRework;
+            if (aOverdue !== bOverdue) return aOverdue ? -1 : 1;
+            return aTime - bTime;
+          default:
+            return aTime - bTime;
+        }
       });
     }
     return list;
-  }, [activeTab, orders, searchKeyword, diseases, getRoadName, getTypeName, kanbanStage, kanbanStatuses, selectedTeamId]);
+  }, [activeTab, orders, searchKeyword, diseases, getRoadName, getTypeName, kanbanStage, kanbanStatuses, selectedTeamId, backlogSort, reworkCountMap]);
 
   const handleStageClick = (key: PipelineKey | null, statuses: OrderStatus[]) => {
     setKanbanStage(key);
@@ -202,6 +237,8 @@ export default function Dispatch() {
           onStageClick={handleStageClick}
           selectedTeamId={selectedTeamId}
           onTeamClick={handleTeamClick}
+          filterTypeId={filterTypeId}
+          onFilterTypeChange={setFilterTypeId}
         />
 
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
@@ -276,14 +313,44 @@ export default function Dispatch() {
                       班组：{getTeamName(selectedTeamId)}
                     </span>
                   )}
-                  {selectedTeamId && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-100 text-[11px] font-medium">
-                      <ArrowUpDown className="w-3 h-3" />
-                      超期优先排序
+                  {selectedTeamId && !kanbanStage && activeTab === 'all' && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-violet-50 text-violet-700 border border-violet-100 text-[11px] font-medium">
+                      <Check className="w-3 h-3" />
+                      仅积压（施工/待验收/整改）
                     </span>
                   )}
                 </h3>
-                {(kanbanStage || selectedTeamId) && (
+                <div className="flex items-center gap-3 flex-wrap">
+                  {selectedTeamId && (
+                    <div className="inline-flex items-center rounded-md border border-neutral-200 overflow-hidden bg-white">
+                      {backlogSortOptions.map((opt) => {
+                        const Icon = opt.icon;
+                        const active = backlogSort === opt.key;
+                        const bg = active
+                          ? opt.color === 'red'
+                            ? 'bg-red-50 text-red-700 border-red-200'
+                            : opt.color === 'amber'
+                              ? 'bg-amber-50 text-amber-700 border-amber-200'
+                              : 'bg-violet-50 text-violet-700 border-violet-200'
+                          : 'text-neutral-600 hover:bg-neutral-50';
+                        return (
+                          <button
+                            key={opt.key}
+                            type="button"
+                            onClick={() => setBacklogSort(opt.key)}
+                            className={cn(
+                              'inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium border-r border-neutral-200 last:border-r-0 transition-colors',
+                              bg
+                            )}
+                          >
+                            <Icon className="w-3 h-3" />
+                            {opt.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {(kanbanStage || selectedTeamId) && (
                   <button
                     type="button"
                     onClick={clearAllFilters}

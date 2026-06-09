@@ -109,10 +109,51 @@ export default function ReviewForm({ orderId, onSuccess, onCancel, className, re
     setPhotoAfterList((prev) => prev.filter((_, i) => i !== idx));
   };
 
-  const goToStep = (step: number) => {
-    if (step >= 0 && step < steps.length) {
-      setCurrentStep(step);
+  const [stepError, setStepError] = useState<string | null>(null);
+
+  const getStepRequirements = (step: number): { ok: boolean; message?: string } => {
+    switch (step) {
+      case 0:
+        if (!arrivedAt) return { ok: false, message: '请先选择到场时间' };
+        if (selectedWorkers.length === 0) return { ok: false, message: '请至少选择一名到场人员' };
+        return { ok: true };
+      case 1:
+        if (!arrivedAt || selectedWorkers.length === 0) return { ok: false, message: '请先完成「到场登记」步骤填写' };
+        if (!disposalMeasures.trim()) return { ok: false, message: '请填写处置措施' };
+        if (!completedAt) return { ok: false, message: '请选择处置完成时间' };
+        if (arrivedAt && completedAt && new Date(completedAt).getTime() < new Date(arrivedAt).getTime()) {
+          return { ok: false, message: '完成时间不能早于到场时间' };
+        }
+        return { ok: true };
+      case 2:
+        if (!disposalMeasures.trim() || !completedAt) return { ok: false, message: '请先完成「处置详情」步骤填写' };
+        return { ok: true };
+      case 3:
+      case 4:
+        if (!disposalMeasures.trim() || !completedAt) return { ok: false, message: '请先完成「处置详情」步骤填写' };
+        if (roadClosed && (!closurePeriod.trim() || !trafficGuide)) {
+          return { ok: false, message: '封路信息下「封路时段」和「交通引导」为必填' };
+        }
+        return { ok: true };
+      default:
+        return { ok: true };
     }
+  };
+
+  const goToStep = (step: number) => {
+    if (step < 0 || step >= steps.length) return;
+    if (step > currentStep) {
+      for (let s = currentStep; s < step; s++) {
+        const req = getStepRequirements(s);
+        if (!req.ok) {
+          setStepError(`第 ${s + 1} 步（${steps[s].label}）：${req.message}`);
+          setCurrentStep(s);
+          return;
+        }
+      }
+    }
+    setStepError(null);
+    setCurrentStep(step);
   };
 
   const canNext = () => {
@@ -134,6 +175,15 @@ export default function ReviewForm({ orderId, onSuccess, onCancel, className, re
 
   const handleSubmit = async () => {
     if (!orderId) return;
+    for (let s = 0; s < steps.length; s++) {
+      const req = getStepRequirements(s);
+      if (!req.ok) {
+        setStepError(`第 ${s + 1} 步（${steps[s].label}）：${req.message}`);
+        setCurrentStep(s);
+        return;
+      }
+    }
+    setStepError(null);
     setSubmitting(true);
     await new Promise((r) => setTimeout(r, 500));
 
@@ -256,6 +306,15 @@ export default function ReviewForm({ orderId, onSuccess, onCancel, className, re
             ))}
           </div>
         </div>
+        {stepError && (
+          <div className="mt-4 p-3 rounded-lg bg-red-50 border border-red-200 flex items-start gap-2 animate-in fade-in slide-in-from-top-1 duration-200">
+            <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+            <div>
+              <div className="text-xs font-semibold text-red-700 mb-0.5">步骤未完成</div>
+              <p className="text-xs text-red-800 leading-relaxed">{stepError}</p>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="min-h-[320px] mb-6">

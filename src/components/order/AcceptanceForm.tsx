@@ -8,7 +8,7 @@ import Button from '@/components/ui/Button';
 
 interface AcceptanceFormProps {
   orderId: string;
-  onSuccess?: () => void;
+  onSuccess?: (record: AcceptanceRecord) => void;
   onCancel?: () => void;
   className?: string;
 }
@@ -71,9 +71,9 @@ export default function AcceptanceForm({ orderId, onSuccess, onCancel, className
       reworkCount,
     };
 
-    addRecord(record);
+    const saved = addRecord(record);
     setSubmitting(false);
-    onSuccess?.();
+    onSuccess?.(saved);
   };
 
   const canSubmit = inspector.trim() && opinion.trim() && (result === 'passed' || rejectReason.trim());

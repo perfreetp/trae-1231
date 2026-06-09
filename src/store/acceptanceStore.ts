@@ -11,7 +11,7 @@ interface AcceptanceState {
 
   _ensureInit: () => void;
   setSelectedOrderId: (id: string | null) => void;
-  addRecord: (record: Omit<AcceptanceRecord, 'id'>) => void;
+  addRecord: (record: Omit<AcceptanceRecord, 'id'>) => AcceptanceRecord;
   getPendingAcceptance: () => { orderId: string; diseaseId: string }[];
   getByOrderId: (orderId: string) => AcceptanceRecord | undefined;
   getAllByOrderId: (orderId: string) => AcceptanceRecord[];
@@ -53,6 +53,7 @@ export const useAcceptanceStore = create<AcceptanceState>((set, get) => ({
         updateOrderStatus(record.orderId, 'rejected');
       }
     }
+    return r;
   },
 
   getPendingAcceptance: () => {

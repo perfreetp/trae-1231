@@ -28,9 +28,15 @@ import {
   Banknote,
   TrendingUp,
   XCircle,
+  FileDown,
+  Printer,
+  Copy,
+  Check as CheckIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Badge from '@/components/ui/Badge';
+import Modal from '@/components/ui/Modal';
+import Button from '@/components/ui/Button';
 import type { Disease, ReviewLog, AcceptanceRecord, WorkOrder, DispatchRecord } from '@/shared/types';
 import { useDiseaseStore } from '@/store/diseaseStore';
 import { useOrderStore } from '@/store/orderStore';
@@ -114,6 +120,8 @@ export default function DiseaseDetail({
   const { getAllByOrderId, getReworkCount } = useAcceptanceStore();
   const { getRoadName, getGridName, getTeamName, getTypeName, getLevelName, diseaseTypes, diseaseLevels } = useDictStore();
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
+  const [reportPreviewOpen, setReportPreviewOpen] = useState(false);
+  const [reportCopied, setReportCopied] = useState(false);
 
   const toggleExpand = (id: string) => {
     setExpandedNodes((prev) => {
@@ -736,15 +744,16 @@ export default function DiseaseDetail({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex justify-end"
-      aria-modal="true"
-      role="dialog"
-    >
+    <>
       <div
-        className="fixed inset-0 bg-neutral-900/50 backdrop-blur-sm animate-in fade-in duration-200"
-        onClick={onClose}
-      />
+        className="fixed inset-0 z-50 flex justify-end"
+        aria-modal="true"
+        role="dialog"
+      >
+        <div
+          className="fixed inset-0 bg-neutral-900/50 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={onClose}
+        />
 
       <div
         className={cn(
@@ -970,10 +979,35 @@ export default function DiseaseDetail({
 
               {order && reviewRounds.length > 0 && (
                 <section>
-                  <SectionTitle title="工单闭环复盘" icon={BarChart3} />
-                  <p className="mt-2 mb-3 text-xs text-neutral-500">
-                    按轮次对比计划、执行、验收全流程数据，快速定位超期与退回环节
-                  </p>
+                  <div className="flex items-start justify-between gap-3 flex-wrap mb-2">
+                    <div>
+                      <SectionTitle title="工单闭环复盘" icon={BarChart3} />
+                      <p className="mt-2 text-xs text-neutral-500">
+                        按轮次对比计划、执行、验收全流程数据，快速定位超期与退回环节
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        icon={FileDown}
+                        onClick={() => setReportPreviewOpen(true)}
+                      >
+                        预览报告
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        icon={Printer}
+                        onClick={() => {
+                          setReportPreviewOpen(true);
+                          setTimeout(() => window.print(), 300);
+                        }}
+                      >
+                        打印导出
+                      </Button>
+                    </div>
+                  </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {reviewRounds.map((rd) => {
                       const statusConfig: Record<ReviewRound['status'], { label: string; variant: 'success' | 'danger' | 'warning' | 'info' | 'neutral' }> = {
@@ -1204,6 +1238,391 @@ export default function DiseaseDetail({
         </div>
       </div>
     </div>
+
+    <Modal
+      open={reportPreviewOpen}
+      onOpenChange={setReportPreviewOpen}
+      size="xl"
+      title="工单闭环复盘报告"
+      description={order ? `工单编号：${order.id} · ${disease ? getRoadName(disease.roadId) + ' · ' + disease.stakeNo : ''}` : ''}
+      showFooter={true}
+      footer={
+        <div className="flex items-center justify-between w-full">
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={reportCopied ? CheckIcon : Copy}
+            onClick={() => {
+              if (!order || !disease) return;
+              const lines: string[] = [];
+              lines.push(`【工单闭环复盘报告】`);
+              lines.push(`工单号：${order.id}`);
+              lines.push(`道路：${getRoadName(disease.roadId)} · 桩号：${disease.stakeNo}`);
+              lines.push(`病害类型：${getTypeName(disease.typeId)} · 等级：${getLevelName(disease.levelId)}`);
+              lines.push(`面积：${formatArea(disease.areaM2)} · 状态：${statusLabelMap[disease.status]?.label || disease.status}`);
+              lines.push(`班组：${getTeamName(order.teamId) || '--'} · 总轮次：${reviewRounds.length}`);
+              lines.push('');
+              reviewRounds.forEach((rd) => {
+                lines.push(`=== 第 ${rd.round} 轮 ===`);
+                lines.push(`  计划：${formatDateTime(rd.plannedStart)} → ${formatDateTime(rd.plannedEnd)}`);
+                lines.push(`  到场：${rd.review ? formatDateTime(rd.review.arrivedAt) : '--'} · 完成：${rd.review ? formatDateTime(rd.review.completedAt) : '--'}`);
+                lines.push(`  班组：${rd.teamId ? getTeamName(rd.teamId) : '--'} · 材料费：¥${rd.materialCost.toFixed(2)}`);
+                lines.push(`  状态：${rd.status === 'passed' ? '验收通过' : rd.status === 'rejected' ? '验收退回' : rd.status === 'reviewed' ? '待验收' : rd.status === 'processing' ? '处置中' : rd.status === 'planning' ? '已派单' : '待派单'}${rd.isOverdue ? ' · 超期' + (rd.overdueHours >= 24 ? (rd.overdueHours/24).toFixed(1) + '天' : rd.overdueHours + 'h') : ''}`);
+                if (rd.review?.disposalMeasures) lines.push(`  处置措施：${rd.review.disposalMeasures}`);
+                if (rd.acceptance) lines.push(`  验收：${rd.acceptance.qualityScore}分 · ${rd.acceptance.result === 'passed' ? '通过' : '退回'}${rd.acceptance.rejectReason ? ' · 原因：' + rd.acceptance.rejectReason : ''}`);
+                lines.push('');
+              });
+              lines.push(`【汇总】累计材料费用：¥${reviewRounds.reduce((s,r) => s + r.materialCost, 0).toFixed(2)} · 退回：${reviewRounds.filter(r => r.status === 'rejected').length}次 · 超期：${reviewRounds.filter(r => r.isOverdue).length}次`);
+              const text = lines.join('\n');
+              navigator.clipboard?.writeText(text).then(() => {
+                setReportCopied(true);
+                setTimeout(() => setReportCopied(false), 2000);
+              });
+            }}
+          >
+            {reportCopied ? '已复制' : '复制文本'}
+          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" size="sm" onClick={() => setReportPreviewOpen(false)}>
+              关闭
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              icon={Printer}
+              onClick={() => {
+                const el = document.getElementById('review-report-content');
+                if (!el) {
+                  window.print();
+                  return;
+                }
+                const w = window.open('', '_blank');
+                if (!w) { window.print(); return; }
+                w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>工单闭环复盘报告-${order?.id || ''}</title><style>
+                  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#1f2937;padding:40px;max-width:900px;margin:0 auto;line-height:1.6}
+                  h1{font-size:20px;margin:0 0 8px;color:#111827}
+                  h2{font-size:16px;margin:24px 0 12px;padding-bottom:6px;border-bottom:1px solid #e5e7eb;color:#111827}
+                  h3{font-size:14px;margin:16px 0 8px;color:#1f2937}
+                  .meta{color:#6b7280;font-size:12px;margin-bottom:24px}
+                  table{width:100%;border-collapse:collapse;margin:8px 0;font-size:12px}
+                  th,td{padding:6px 10px;border:1px solid #e5e7eb;text-align:left}
+                  th{background:#f9fafb;font-weight:600}
+                  .tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:500;margin-right:4px}
+                  .tag-green{background:#dcfce7;color:#166534}
+                  .tag-red{background:#fee2e2;color:#991b1b}
+                  .tag-amber{background:#fef3c7;color:#92400e}
+                  .tag-blue{background:#dbeafe;color:#1e40af}
+                  .tag-violet{background:#ede9fe;color:#5b21b6}
+                  .photo{width:120px;height:80px;object-fit:cover;border:1px solid #e5e7eb;border-radius:4px;margin-right:8px;display:inline-block}
+                  .summary{background:#f9fafb;padding:16px;border-radius:8px;margin-top:16px;font-size:12px}
+                  .kv{display:flex;gap:16px;flex-wrap:wrap}
+                  .kv>div{flex:1 1 40%}
+                  .kv-label{color:#6b7280;font-size:11px}
+                  .kv-val{font-weight:500;font-size:13px;color:#111827}
+                </style></head><body>${el.innerHTML}</body></html>`);
+                w.document.close();
+                setTimeout(() => w.print(), 300);
+              }}
+            >
+              打印导出
+            </Button>
+          </div>
+        </div>
+      }
+      contentClassName="max-h-[80vh] overflow-y-auto"
+    >
+      {order && disease && (
+        <div id="review-report-content" className="space-y-5">
+          <div className="flex items-start justify-between p-4 rounded-lg bg-gradient-to-r from-primary-50 to-violet-50 border border-primary-100">
+            <div>
+              <h1 className="text-xl font-bold text-neutral-900 flex items-center gap-2">
+                <BarChart3 className="w-5 h-5 text-primary-600" />
+                工单闭环复盘报告
+              </h1>
+              <p className="text-xs text-neutral-500 mt-1">
+                生成时间：{formatDateTime(new Date().toISOString())} · 道路病害管理系统
+              </p>
+            </div>
+            <div className="flex flex-col items-end gap-1 text-xs">
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-white border border-neutral-200 font-mono font-medium">
+                工单 {order.id}
+              </span>
+              <span className="text-neutral-500">病害 {disease.id}</span>
+            </div>
+          </div>
+
+          <section>
+            <h3 className="text-sm font-semibold text-neutral-900 mb-2 flex items-center gap-1.5">
+              <FileText className="w-4 h-4 text-neutral-500" /> 基本信息
+            </h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-4 rounded-lg bg-neutral-50 border border-neutral-200 text-sm">
+              <div>
+                <div className="text-[11px] text-neutral-500 mb-0.5">道路位置</div>
+                <div className="font-medium text-neutral-800">{getRoadName(disease.roadId)}</div>
+              </div>
+              <div>
+                <div className="text-[11px] text-neutral-500 mb-0.5">桩号 / 坐标</div>
+                <div className="font-medium text-neutral-800 tabular-nums text-xs">
+                  {disease.stakeNo}
+                </div>
+              </div>
+              <div>
+                <div className="text-[11px] text-neutral-500 mb-0.5">病害类型 / 等级</div>
+                <div className="font-medium text-neutral-800">
+                  {getTypeName(disease.typeId)} · {getLevelName(disease.levelId)}
+                </div>
+              </div>
+              <div>
+                <div className="text-[11px] text-neutral-500 mb-0.5">面积 / 状态</div>
+                <div className="font-medium text-neutral-800">
+                  {formatArea(disease.areaM2)} · {statusLabelMap[disease.status]?.label || disease.status}
+                </div>
+              </div>
+              <div>
+                <div className="text-[11px] text-neutral-500 mb-0.5">处置班组</div>
+                <div className="font-medium text-neutral-800">{getTeamName(order.teamId) || '--'}</div>
+              </div>
+              <div>
+                <div className="text-[11px] text-neutral-500 mb-0.5">上报时间</div>
+                <div className="font-medium text-neutral-800 tabular-nums text-xs">
+                  {formatDateTime(disease.reportedAt)}
+                </div>
+              </div>
+              <div>
+                <div className="text-[11px] text-neutral-500 mb-0.5">累计返工</div>
+                <div className="font-medium text-neutral-800">{reworkCount} 次</div>
+              </div>
+              <div>
+                <div className="text-[11px] text-neutral-500 mb-0.5">累计材料费用</div>
+                <div className="font-mono font-semibold text-emerald-700">
+                  ¥{reviewRounds.reduce((s, r) => s + r.materialCost, 0).toFixed(2)}
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <div className="border-t border-dashed border-neutral-200" />
+
+          {reviewRounds.map((rd) => {
+            const statusLabel = rd.status === 'passed' ? '验收通过' : rd.status === 'rejected' ? '验收退回' : rd.status === 'reviewed' ? '待验收' : rd.status === 'processing' ? '处置中' : rd.status === 'planning' ? '已派单' : '待派单';
+            const statusClass = rd.status === 'passed' ? 'tag-green' : rd.status === 'rejected' ? 'tag-red' : rd.status === 'reviewed' ? 'tag-amber' : rd.status === 'processing' ? 'tag-blue' : 'tag-violet';
+            return (
+              <section key={rd.round} className="border border-neutral-200 rounded-lg overflow-hidden">
+                <div className={cn(
+                  'px-4 py-3 border-b border-neutral-200 flex items-center justify-between flex-wrap gap-2',
+                  rd.status === 'rejected' ? 'bg-red-50/70' : rd.status === 'passed' ? 'bg-green-50/70' : rd.isOverdue ? 'bg-amber-50/70' : 'bg-neutral-50/70'
+                )}>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={cn('tag', 'tag-violet')}>第 {rd.round} 轮</span>
+                    <span className={cn('tag', statusClass)}>{statusLabel}</span>
+                    {rd.isOverdue && (
+                      <span className={cn('tag', 'tag-red')}>
+                        超期 {rd.overdueHours >= 24 ? `${(rd.overdueHours / 24).toFixed(1)}天` : `${rd.overdueHours}h`}
+                      </span>
+                    )}
+                    {rd.round > 1 && rd.status === 'waiting' && (
+                      <span className={cn('tag', 'tag-amber')}>等待重新派单</span>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-neutral-500 tabular-nums flex items-center gap-3">
+                    <span>材料费 ¥{rd.materialCost.toFixed(2)}</span>
+                    {rd.teamId && <span>{getTeamName(rd.teamId)}</span>}
+                  </div>
+                </div>
+
+                <div className="p-4 space-y-4">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>计划开始</th>
+                        <th>计划完成</th>
+                        <th>实际到场</th>
+                        <th>实际完成</th>
+                        <th>派单人</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td className="tabular-nums">{formatDateTime(rd.plannedStart) || '--'}</td>
+                        <td className="tabular-nums">{formatDateTime(rd.plannedEnd) || '--'}</td>
+                        <td className="tabular-nums">{rd.review ? formatDateTime(rd.review.arrivedAt) : '--'}</td>
+                        <td className="tabular-nums">{rd.review ? formatDateTime(rd.review.completedAt) : '--'}</td>
+                        <td>{rd.dispatcher || '--'}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+
+                  {rd.review?.disposalMeasures && (
+                    <div>
+                      <div className="text-[11px] font-semibold text-neutral-600 mb-1">处置措施</div>
+                      <div className="p-3 rounded-md bg-white border border-neutral-200 text-sm text-neutral-700 leading-relaxed">
+                        {rd.review.disposalMeasures}
+                      </div>
+                    </div>
+                  )}
+
+                  {rd.review?.workers && rd.review.workers.length > 0 && (
+                    <div>
+                      <div className="text-[11px] font-semibold text-neutral-600 mb-1">施工人员（{rd.review.workers.length}人）</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {rd.review.workers.map((w) => (
+                          <span key={w} className="inline-flex items-center px-2 py-0.5 rounded bg-blue-50 text-blue-800 text-xs border border-blue-100">
+                            {w}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {rd.review?.materials && rd.review.materials.length > 0 && (
+                    <div>
+                      <div className="text-[11px] font-semibold text-neutral-600 mb-1">
+                        材料清单（{rd.review.materials.length}项，小计 ¥{rd.materialCost.toFixed(2)}）
+                      </div>
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>材料名称</th>
+                            <th>规格</th>
+                            <th>数量</th>
+                            <th>单价</th>
+                            <th>小计</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rd.review.materials.map((m) => (
+                            <tr key={m.id}>
+                              <td>{m.materialName}</td>
+                              <td>{m.specification || '--'}</td>
+                              <td className="tabular-nums">{m.quantity}{m.unit}</td>
+                              <td className="tabular-nums">¥{m.unitPrice.toFixed(2)}</td>
+                              <td className="tabular-nums font-medium">¥{m.subtotal.toFixed(2)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {rd.review && (rd.review.photoDuring || rd.review.photoAfter) && (
+                    <div>
+                      <div className="text-[11px] font-semibold text-neutral-600 mb-1">现场照片</div>
+                      <div className="flex flex-wrap gap-2">
+                        {rd.review.photoDuring && (
+                          <div className="relative">
+                            <img src={rd.review.photoDuring} className="photo" alt={`R${rd.round}-处置中`} />
+                            <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/60 text-white text-[10px]">处置中</span>
+                          </div>
+                        )}
+                        {rd.review.photoAfter && (
+                          <div className="relative">
+                            <img src={rd.review.photoAfter} className="photo" alt={`R${rd.round}-处置后`} />
+                            <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/60 text-white text-[10px]">处置后</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {rd.acceptance && (
+                    <div className={cn(
+                      'p-3 rounded-md border',
+                      rd.acceptance.result === 'passed' ? 'bg-green-50/50 border-green-200' : 'bg-red-50/50 border-red-200'
+                    )}>
+                      <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={cn('tag', rd.acceptance.result === 'passed' ? 'tag-green' : 'tag-red')}>
+                            {rd.acceptance.result === 'passed' ? '验收通过' : '验收退回'}
+                          </span>
+                          <span className="text-sm font-bold tabular-nums">
+                            {rd.acceptance.qualityScore}
+                            <span className="text-xs text-neutral-500 ml-0.5">分</span>
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-neutral-500 tabular-nums flex items-center gap-3">
+                          <span>验收人 {rd.acceptance.inspector}</span>
+                          <span>{formatDateTime(rd.acceptance.inspectedAt)}</span>
+                        </div>
+                      </div>
+                      {rd.acceptance.opinion && (
+                        <div className="mb-2 text-sm text-neutral-700">
+                          <span className="text-neutral-500 text-xs">验收意见：</span>
+                          {rd.acceptance.opinion}
+                        </div>
+                      )}
+                      {rd.acceptance.rejectReason && (
+                        <div className="p-2.5 rounded-md bg-white border border-red-200">
+                          <div className="flex items-start gap-1.5">
+                            <AlertTriangle className="w-3.5 h-3.5 text-red-500 flex-shrink-0 mt-0.5" />
+                            <div>
+                              <div className="text-[11px] font-semibold text-red-700 mb-0.5">退回原因（需返工）</div>
+                              <p className="text-xs text-red-800 leading-relaxed">{rd.acceptance.rejectReason}</p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {rd.remark && (
+                    <div className="p-3 rounded-md bg-violet-50/60 border border-violet-100">
+                      <div className="text-[11px] font-medium text-violet-700 mb-0.5">派单备注</div>
+                      <p className="text-xs text-neutral-700 leading-relaxed">{rd.remark}</p>
+                    </div>
+                  )}
+                </div>
+              </section>
+            );
+          })}
+
+          <div className="summary">
+            <h3 className="text-sm font-semibold text-neutral-900 mb-2">汇总分析</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+              <div className="p-3 rounded-md bg-white border border-neutral-200">
+                <div className="text-[11px] text-neutral-500 mb-0.5">总轮次 / 累计返工</div>
+                <div className="text-lg font-bold tabular-nums text-neutral-900">
+                  {reviewRounds.length} <span className="text-xs text-neutral-500 font-normal">轮 · 返工 {reworkCount} 次</span>
+                </div>
+              </div>
+              <div className="p-3 rounded-md bg-white border border-neutral-200">
+                <div className="text-[11px] text-neutral-500 mb-0.5">超期 / 退回轮次</div>
+                <div className="text-lg font-bold tabular-nums text-neutral-900">
+                  <span className="text-red-600">{reviewRounds.filter(r => r.isOverdue).length}</span>
+                  <span className="text-xs text-neutral-500 font-normal mx-1">次超期 ·</span>
+                  <span className="text-amber-600">{reviewRounds.filter(r => r.status === 'rejected').length}</span>
+                  <span className="text-xs text-neutral-500 font-normal ml-1">次退回</span>
+                </div>
+              </div>
+              <div className="p-3 rounded-md bg-white border border-neutral-200">
+                <div className="text-[11px] text-neutral-500 mb-0.5">累计材料费用</div>
+                <div className="text-lg font-bold font-mono tabular-nums text-emerald-700">
+                  ¥{reviewRounds.reduce((s, r) => s + r.materialCost, 0).toFixed(2)}
+                </div>
+              </div>
+            </div>
+            {reviewRounds.some(r => r.isOverdue) && (
+              <p className="mt-3 text-[11px] text-amber-800 flex items-start gap-1.5">
+                <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                <span>
+                  超期发生在第 {reviewRounds.filter(r => r.isOverdue).map(r => `${r.round}轮`).join('、')}，
+                  建议分析 {reviewRounds.filter(r => r.isOverdue).length > 1 ? '班组工期分配与派单合理性' : '计划完成时间设置是否过紧'}。
+                </span>
+              </p>
+            )}
+            {reviewRounds.some(r => r.status === 'rejected') && (
+              <p className="mt-1 text-[11px] text-red-800 flex items-start gap-1.5">
+                <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                <span>
+                  退回发生在第 {reviewRounds.filter(r => r.status === 'rejected').map(r => `${r.round}轮`).join('、')}，
+                  建议复核处置流程 SOP 与班组能力匹配度。
+                </span>
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+    </Modal>
+    </>
   );
 }
 

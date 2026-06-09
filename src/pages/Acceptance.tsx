@@ -44,6 +44,7 @@ interface PendingItem {
 
 export default function Acceptance() {
   const { getPendingAcceptance, records, getReworkCount, selectedOrderId, setSelectedOrderId, getAllByOrderId } = useAcceptanceStore();
+  const { getAllReviewsByOrderId } = useReviewStore();
   const { diseases } = useDiseaseStore();
   const { orders } = useOrderStore();
   const { reviews, getReviewByOrderId } = useReviewStore();
@@ -86,16 +87,20 @@ export default function Acceptance() {
     if (activeTab === 'pending') {
       const target = selectedOrderId ? pendingList.find((p) => p.orderId === selectedOrderId) : pendingList[0];
       return target
-        ? {
-            orderId: target.orderId,
-            disease: target.disease,
-            order: target.order,
-            review: target.review,
-            reworkCount: target.orderId ? getReworkCount(target.orderId) : 0,
-            reworkHistory: target.orderId
-              ? records.filter((r) => r.orderId === target.orderId && r.result === 'rejected')
-              : [],
-          }
+        ? (() => {
+            const allReviews = target.orderId ? getAllReviewsByOrderId(target.orderId).slice().sort((a, b) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime()) : [];
+            return {
+              orderId: target.orderId,
+              disease: target.disease,
+              order: target.order,
+              review: allReviews[0] || target.review,
+              allReviews,
+              reworkCount: target.orderId ? getReworkCount(target.orderId) : 0,
+              reworkHistory: target.orderId
+                ? records.filter((r) => r.orderId === target.orderId && r.result === 'rejected')
+                : [],
+            };
+          })()
         : null;
     } else {
       let target: typeof acceptedList[number] | undefined;
@@ -107,24 +112,25 @@ export default function Acceptance() {
       }
       if (!target) target = acceptedList[0];
       if (!target) return null;
-      const review = getReviewByOrderId(target.record.orderId);
+      const allReviews = getAllReviewsByOrderId(target.record.orderId).slice().sort((a, b) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime());
       return {
         orderId: target.record.orderId,
         disease: target.disease,
         order: target.order,
-        review,
+        review: allReviews[0],
+        allReviews,
         acceptanceRecord: target.record,
         reworkCount: getReworkCount(target.record.orderId),
         reworkHistory: records.filter((r) => r.orderId === target.record.orderId && r.result === 'rejected'),
       };
     }
-  }, [activeTab, selectedOrderId, selectedRecordId, pendingList, acceptedList, records, getReviewByOrderId, getReworkCount]);
+  }, [activeTab, selectedOrderId, selectedRecordId, pendingList, acceptedList, records, getReviewByOrderId, getReworkCount, getAllReviewsByOrderId]);
 
-  const handleAcceptanceSuccess = () => {
-    const sorted = [...records].sort((a, b) => new Date(b.inspectedAt).getTime() - new Date(a.inspectedAt).getTime());
-    const lastRecord = sorted[0];
+  const handleAcceptanceSuccess = (lastRecord: AcceptanceRecord) => {
     setSuccessResult(lastRecord?.result || 'passed');
     setSuccessRecord(lastRecord || null);
+    setSelectedRecordId(lastRecord?.id || null);
+    setSelectedOrderId(lastRecord?.orderId || null);
     setShowSuccess(true);
     if (lastRecord?.result === 'rejected') {
       setTimeout(() => {
@@ -132,8 +138,6 @@ export default function Acceptance() {
         setSuccessResult(null);
         setSuccessRecord(null);
         setActiveTab('history');
-        setSelectedRecordId(lastRecord.id);
-        setSelectedOrderId(lastRecord.orderId);
       }, 3000);
     } else {
       setTimeout(() => {
@@ -307,11 +311,16 @@ export default function Acceptance() {
 
               {selected.disease && selected.review && (
                 <div className="bg-white rounded-lg border border-neutral-200 overflow-hidden">
-                  <div className="px-6 py-4 border-b border-neutral-100">
+                  <div className="px-6 py-4 border-b border-neutral-100 flex items-center justify-between flex-wrap gap-2">
                     <h2 className="text-lg font-semibold text-neutral-900 flex items-center gap-2">
                       <ClipboardCheck className="w-5 h-5 text-primary-600" />
                       复核信息回顾
                     </h2>
+                    {selected.allReviews && selected.allReviews.length > 0 && (
+                      <Badge variant={selected.allReviews.length > 1 ? 'warning' : 'info'} size="sm">
+                        共 {selected.allReviews.length} 轮复核
+                      </Badge>
+                    )}
                   </div>
                   <div className="p-6 grid grid-cols-2 gap-6">
                     <InfoBlock
@@ -332,14 +341,18 @@ export default function Acceptance() {
                       bgColor="bg-emerald-50"
                     >
                       <div className="space-y-1.5">
-                        {selected.review.materials.map((m) => (
-                          <div key={m.id} className="flex items-center justify-between text-sm">
-                            <span className="text-neutral-700">{m.materialName}</span>
-                            <span className="text-neutral-500 tabular-nums">
-                              {m.quantity} {m.unit}
-                            </span>
-                          </div>
-                        ))}
+                        {selected.review.materials.length === 0 ? (
+                          <p className="text-xs text-neutral-400">暂无材料记录</p>
+                        ) : (
+                          selected.review.materials.map((m) => (
+                            <div key={m.id} className="flex items-center justify-between text-sm">
+                              <span className="text-neutral-700">{m.materialName}</span>
+                              <span className="text-neutral-500 tabular-nums">
+                                {m.quantity} {m.unit}
+                              </span>
+                            </div>
+                          ))
+                        )}
                       </div>
                     </InfoBlock>
 
@@ -380,6 +393,119 @@ export default function Acceptance() {
                         </div>
                       </div>
                     </InfoBlock>
+                  </div>
+                </div>
+              )}
+
+              {selected.allReviews && selected.allReviews.length > 1 && (
+                <div className="bg-white rounded-lg border border-neutral-200 overflow-hidden">
+                  <div className="px-6 py-4 border-b border-neutral-100">
+                    <h2 className="text-lg font-semibold text-neutral-900 flex items-center gap-2">
+                      <RotateCcw className="w-5 h-5 text-amber-500" />
+                      各轮复核追溯
+                      <Badge variant="warning" size="sm" className="ml-1">
+                        共 {selected.allReviews.length} 轮
+                      </Badge>
+                    </h2>
+                    <p className="text-xs text-neutral-500 mt-1">
+                      查看每一轮复核提交的现场照片、处置措施和使用材料
+                    </p>
+                  </div>
+                  <div className="p-6 space-y-4">
+                    {[...selected.allReviews]
+                      .sort((a, b) => new Date(a.completedAt).getTime() - new Date(b.completedAt).getTime())
+                      .map((rv, idx) => {
+                        const round = idx + 1;
+                        const total = selected.allReviews!.length;
+                        const isLatest = idx === total - 1;
+                        const photoList = [rv.photoDuring, rv.photoAfter].filter(Boolean) as string[];
+                        return (
+                          <div
+                            key={rv.id}
+                            className={cn(
+                              'rounded-lg border p-4 transition-all',
+                              isLatest
+                                ? 'border-amber-300 bg-gradient-to-br from-amber-50/50 to-white ring-1 ring-amber-200'
+                                : 'border-neutral-200 bg-neutral-50/50'
+                            )}
+                          >
+                            <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <Badge variant={isLatest ? 'warning' : 'info'} size="sm">
+                                  第 {round} 轮复核
+                                </Badge>
+                                {isLatest && (
+                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500 text-white text-[10px] font-medium">
+                                    当前验收轮
+                                  </span>
+                                )}
+                                {round <= (selected.reworkHistory?.length || 0) && (
+                                  <Badge variant="danger" size="sm">对应第 {round} 轮验收退回</Badge>
+                                )}
+                              </div>
+                              <div className="text-[11px] text-neutral-500 tabular-nums flex items-center gap-3">
+                                <span className="flex items-center gap-1">
+                                  <Clock className="w-3 h-3" />
+                                  到场 {formatDateTime(rv.arrivedAt)}
+                                </span>
+                                <span className="flex items-center gap-1">
+                                  <CheckCircle2 className="w-3 h-3" />
+                                  完成 {formatDateTime(rv.completedAt)}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <div className="text-[11px] font-medium text-neutral-500 mb-1.5 flex items-center gap-1">
+                                  <Wrench className="w-3 h-3" /> 处置措施
+                                </div>
+                                <p className="text-xs text-neutral-700 leading-relaxed p-2 rounded bg-white border border-neutral-100">
+                                  {rv.disposalMeasures}
+                                </p>
+                              </div>
+
+                              <div>
+                                <div className="text-[11px] font-medium text-neutral-500 mb-1.5 flex items-center gap-1">
+                                  <Package className="w-3 h-3" /> 使用材料（{rv.materials.length}项）
+                                </div>
+                                <div className="p-2 rounded bg-white border border-neutral-100 space-y-1 max-h-24 overflow-y-auto">
+                                  {rv.materials.length === 0 ? (
+                                    <p className="text-[11px] text-neutral-400">未登记材料</p>
+                                  ) : (
+                                    rv.materials.map((m) => (
+                                      <div key={m.id} className="flex items-center justify-between text-[11px]">
+                                        <span className="text-neutral-700">{m.materialName}</span>
+                                        <span className="text-neutral-500 tabular-nums">
+                                          {m.quantity}{m.unit} · ¥{m.subtotal.toFixed(2)}
+                                        </span>
+                                      </div>
+                                    ))
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            {photoList.length > 0 && (
+                              <div className="mt-3">
+                                <div className="text-[11px] font-medium text-neutral-500 mb-1.5 flex items-center gap-1">
+                                  <Camera className="w-3 h-3" /> 现场照片（{photoList.length}张）
+                                </div>
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                                  {photoList.map((ph, i) => (
+                                    <div key={i} className="aspect-video rounded-md overflow-hidden border border-neutral-200 bg-neutral-100 relative group">
+                                      <img src={ph} alt={`R${round}-${i + 1}`} className="w-full h-full object-cover" />
+                                      <span className="absolute bottom-1 left-1 px-1 py-0.5 rounded bg-black/50 text-white text-[10px] font-medium">
+                                        {i === 0 ? '处置中' : '处置后'}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                   </div>
                 </div>
               )}
