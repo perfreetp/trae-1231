@@ -125,9 +125,14 @@ export default function OrderCard({ order, onAssign, onView, className, highligh
         )}
 
         <div className="flex items-center gap-2">
-          {order.status === 'unassigned' && onAssign && (
-            <Button size="sm" variant="primary" icon={Send} onClick={() => onAssign(order.id)}>
-              派单
+          {(order.status === 'unassigned' || order.status === 'rejected') && onAssign && (
+            <Button
+              size="sm"
+              variant={order.status === 'rejected' ? 'warning' : 'primary'}
+              icon={Send}
+              onClick={() => onAssign(order.id)}
+            >
+              {order.status === 'rejected' ? '重新派单' : '派单'}
             </Button>
           )}
           {onView && (

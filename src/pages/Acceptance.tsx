@@ -52,6 +52,7 @@ export default function Acceptance() {
   const [activeTab, setActiveTab] = useState<string>('pending');
   const [showSuccess, setShowSuccess] = useState(false);
   const [successResult, setSuccessResult] = useState<'passed' | 'rejected' | null>(null);
+  const [successRecordId, setSuccessRecordId] = useState<string | null>(null);
 
   useEffect(() => {
     useAcceptanceStore.getState()._ensureInit();
@@ -114,13 +115,24 @@ export default function Acceptance() {
   }, [activeTab, selectedOrderId, pendingList, acceptedList, records, getReviewByOrderId, getReworkCount]);
 
   const handleAcceptanceSuccess = () => {
-    setSuccessResult(records[records.length - 1]?.result || 'passed');
+    const lastRecord = records[records.length - 1];
+    setSuccessResult(lastRecord?.result || 'passed');
+    setSuccessRecordId(lastRecord?.orderId || null);
     setShowSuccess(true);
-    setTimeout(() => {
-      setShowSuccess(false);
-      setSuccessResult(null);
-      setSelectedOrderId(null);
-    }, 2500);
+    if (lastRecord?.result === 'rejected') {
+      setTimeout(() => {
+        setShowSuccess(false);
+        setSuccessResult(null);
+        setActiveTab('history');
+        setSelectedOrderId(lastRecord.orderId);
+      }, 3000);
+    } else {
+      setTimeout(() => {
+        setShowSuccess(false);
+        setSuccessResult(null);
+        setSelectedOrderId(null);
+      }, 2500);
+    }
   };
 
   return (
@@ -199,7 +211,16 @@ export default function Acceptance() {
 
         <div className="flex-1 min-w-0 overflow-y-auto">
           {showSuccess ? (
-            <SuccessBanner result={successResult!} />
+            <SuccessBanner
+              result={successResult!}
+              record={successRecordId ? records[records.length - 1] : undefined}
+              onViewHistory={() => {
+                const lastRecord = records[records.length - 1];
+                setShowSuccess(false);
+                setActiveTab('history');
+                if (lastRecord) setSelectedOrderId(lastRecord.orderId);
+              }}
+            />
           ) : selected ? (
             <div className="space-y-6 pb-8">
               <div className="bg-white rounded-lg border border-neutral-200 overflow-hidden">
@@ -622,14 +643,22 @@ function AcceptedRecordView({ record }: { record: AcceptanceRecord }) {
   );
 }
 
-function SuccessBanner({ result }: { result: 'passed' | 'rejected' }) {
+function SuccessBanner({
+  result,
+  record,
+  onViewHistory,
+}: {
+  result: 'passed' | 'rejected';
+  record?: AcceptanceRecord;
+  onViewHistory?: () => void;
+}) {
   const isPassed = result === 'passed';
   return (
-    <div className="h-full flex items-center justify-center">
-      <div className="text-center animate-in fade-in zoom-in duration-300">
+    <div className="h-full flex items-center justify-center py-10">
+      <div className="text-center animate-in fade-in zoom-in duration-300 max-w-md mx-auto">
         <div className={cn(
           'w-24 h-24 rounded-full mx-auto mb-6 flex items-center justify-center shadow-lg',
-          isPassed ? 'bg-green-500' : 'bg-amber-500'
+          isPassed ? 'bg-green-500' : 'bg-red-500'
         )}>
           {isPassed ? (
             <ThumbsUp className="w-12 h-12 text-white" />
@@ -637,12 +666,86 @@ function SuccessBanner({ result }: { result: 'passed' | 'rejected' }) {
             <RotateCcw className="w-12 h-12 text-white" />
           )}
         </div>
-        <h2 className={cn('text-2xl font-bold mb-2', isPassed ? 'text-green-600' : 'text-amber-600')}>
-          {isPassed ? '验收通过！' : '已退回工单'}
+        <h2 className={cn('text-2xl font-bold mb-2', isPassed ? 'text-green-600' : 'text-red-600')}>
+          {isPassed ? '验收通过！' : '已退回整改'}
         </h2>
-        <p className="text-sm text-neutral-500">
-          {isPassed ? '该工单已完成验收流程，状态已更新' : '工单已退回至处置流程，请等待重新提交'}
+        <p className="text-sm text-neutral-500 mb-6">
+          {isPassed
+            ? '该工单已完成验收流程，状态已更新为已完成'
+            : '工单质量未达标，已退回整改流程，需重新派单处置后再次提交验收'}
         </p>
+
+        {record && (
+          <div className={cn(
+            'text-left rounded-xl border p-5 mb-6',
+            isPassed ? 'bg-green-50/60 border-green-200' : 'bg-red-50/60 border-red-200'
+          )}>
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <span className="text-xs text-neutral-500 block mb-1">质量评分</span>
+                <span className={cn(
+                  'text-2xl font-bold tabular-nums',
+                  isPassed ? 'text-green-600' : 'text-red-600'
+                )}>
+                  {record.qualityScore}
+                  <span className="text-sm font-normal text-neutral-500 ml-1">分</span>
+                </span>
+              </div>
+              <div>
+                <span className="text-xs text-neutral-500 block mb-1">验收人</span>
+                <span className="font-medium text-neutral-800">{record.inspector}</span>
+              </div>
+              <div>
+                <span className="text-xs text-neutral-500 block mb-1">验收时间</span>
+                <span className="tabular-nums text-neutral-700">{formatDateTime(record.inspectedAt)}</span>
+              </div>
+              <div>
+                <span className="text-xs text-neutral-500 block mb-1">工单编号</span>
+                <span className="font-mono text-neutral-700">{record.orderId}</span>
+              </div>
+            </div>
+            {record.opinion && (
+              <div className="mt-4 pt-3 border-t border-neutral-200/60">
+                <span className="text-xs text-neutral-500 block mb-1">验收意见</span>
+                <p className="text-sm text-neutral-700 leading-relaxed">{record.opinion}</p>
+              </div>
+            )}
+            {record.rejectReason && (
+              <div className="mt-4 p-3 bg-white rounded-lg border border-red-200">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <span className="text-xs font-semibold text-red-700 block mb-1">退回原因（需返工处理）</span>
+                    <p className="text-sm text-neutral-700 leading-relaxed">{record.rejectReason}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {!isPassed && onViewHistory && (
+          <div className="space-y-2 text-left bg-white rounded-lg border border-neutral-200 p-4 mb-6">
+            <h4 className="text-sm font-semibold text-neutral-800 flex items-center gap-2">
+              <History className="w-4 h-4 text-neutral-500" />
+              后续操作
+            </h4>
+            <ol className="space-y-1.5 text-xs text-neutral-600 list-decimal pl-4">
+              <li>工单已自动进入<span className="text-red-600 font-medium">整改中</span>状态</li>
+              <li>调度员在「工单调度 → 整改中」Tab 点击<span className="font-medium">重新派单</span></li>
+              <li>班组整改完成后通过「现场复核」再次提交</li>
+              <li>进入「维修验收」完成第二轮质量验收</li>
+            </ol>
+          </div>
+        )}
+
+        <div className="flex items-center justify-center gap-3">
+          {onViewHistory && (
+            <Button variant={isPassed ? 'secondary' : 'warning'} icon={History} onClick={onViewHistory}>
+              {isPassed ? '查看验收记录' : '查看退回记录'}
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   );

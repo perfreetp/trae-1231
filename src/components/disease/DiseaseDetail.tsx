@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Badge from '@/components/ui/Badge';
-import type { Disease, ReviewLog, AcceptanceRecord, WorkOrder } from '@/shared/types';
+import type { Disease, ReviewLog, AcceptanceRecord, WorkOrder, DispatchRecord } from '@/shared/types';
 import { useDiseaseStore } from '@/store/diseaseStore';
 import { useOrderStore } from '@/store/orderStore';
 import { useReviewStore } from '@/store/reviewStore';
@@ -61,6 +61,7 @@ interface TimelineNode {
   isReworkStart?: boolean;
   description?: string;
   relatedOrder?: WorkOrder;
+  relatedDispatch?: DispatchRecord;
   relatedReview?: ReviewLog;
   relatedAcceptance?: AcceptanceRecord;
 }
@@ -212,6 +213,7 @@ export default function DiseaseDetail({
         });
       }
 
+      const dispatch = order?.dispatchHistory?.[idx];
       let stepCurrent = false;
       if (isCurrentRound && disease?.status === 'assigned') stepCurrent = true;
       nodes.push({
@@ -219,14 +221,25 @@ export default function DiseaseDetail({
         key: 'assign',
         title: isRework ? `返工派单 (第${round}轮)` : `工单派发`,
         icon: ClipboardList,
-        time: order?.assignedAt || null,
-        done: !!(order?.assignedAt && (!isRework || allAcceptances[idx - 1])),
-        current: stepCurrent,
+        time: dispatch?.assignedAt || null,
+        done: !!(dispatch && (!isRework || allAcceptances[idx - 1])),
+        current: isCurrentRound && !dispatch && (disease?.status === 'rejected' || disease?.status === 'pending')
+          ? false
+          : (stepCurrent || (isCurrentRound && dispatch && !allAcceptances[idx] && disease?.status === 'assigned')),
         color: 'bg-violet-500',
         round,
-        description: order ? `派单人：${order.dispatcher || '--'}，班组：${getTeamName(order.teamId)}` : undefined,
+        description: dispatch
+          ? `派单人：${dispatch.dispatcher || '--'}，班组：${getTeamName(dispatch.teamId)}`
+          : (isRework && !dispatch ? '等待调度员重新派单' : order?.assignedAt ? `派单人：${order.dispatcher || '--'}，班组：${getTeamName(order.teamId)}` : undefined),
         relatedOrder: order,
+        relatedDispatch: dispatch,
       });
+
+      if (isRework && !dispatch && isCurrentRound && disease?.status === 'rejected') {
+        nodes[nodes.length - 1].current = true;
+        nodes[nodes.length - 1].color = 'bg-neutral-300';
+        nodes[nodes.length - 1].title = `等待返工派单 (第${round}轮)`;
+      }
 
       if (isCurrentRound && disease?.status === 'processing') stepCurrent = true;
       else stepCurrent = false;
@@ -333,40 +346,51 @@ export default function DiseaseDetail({
   const renderNodeDetail = (node: TimelineNode) => {
     if (!expandedNodes.has(node.id)) return null;
 
-    if (node.relatedOrder && (node.key === 'assign')) {
+    if (node.key === 'assign' && (node.relatedOrder || node.relatedDispatch)) {
       const o = node.relatedOrder;
+      const d = node.relatedDispatch;
+      const teamId = d?.teamId || o?.teamId || '';
+      const plannedStart = d?.plannedStart || o?.plannedStart;
+      const plannedEnd = d?.plannedEnd || o?.plannedEnd;
+      const dispatcher = d?.dispatcher || o?.dispatcher;
+      const remark = d?.remark || o?.remark;
       return (
         <div className="mt-3 ml-6 p-4 rounded-lg bg-gradient-to-br from-violet-50 to-white border border-violet-100 space-y-3">
+          {d && (
+            <div className="-mx-1 -mt-1 mb-1 inline-flex items-center gap-1 px-2 py-0.5 rounded bg-violet-100 text-violet-700 text-[11px] font-medium">
+              第 {d.round} 轮派单记录
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3 text-sm">
             <div>
               <div className="text-[11px] text-neutral-400 mb-0.5">工单号</div>
-              <div className="font-mono text-neutral-800">{o.id}</div>
+              <div className="font-mono text-neutral-800">{o?.id || '--'}</div>
             </div>
             <div>
               <div className="text-[11px] text-neutral-400 mb-0.5">处置班组</div>
-              <div className="font-medium text-neutral-800">{getTeamName(o.teamId)}</div>
+              <div className="font-medium text-neutral-800">{getTeamName(teamId) || '--'}</div>
             </div>
             <div>
               <div className="text-[11px] text-neutral-400 mb-0.5">计划开始</div>
-              <div className="text-neutral-700 tabular-nums">{formatDateTime(o.plannedStart)}</div>
+              <div className="text-neutral-700 tabular-nums">{formatDateTime(plannedStart)}</div>
             </div>
             <div>
               <div className="text-[11px] text-neutral-400 mb-0.5">计划完成</div>
-              <div className="text-neutral-700 tabular-nums">{formatDateTime(o.plannedEnd)}</div>
+              <div className="text-neutral-700 tabular-nums">{formatDateTime(plannedEnd)}</div>
             </div>
             <div className="col-span-2">
               <div className="text-[11px] text-neutral-400 mb-0.5">派单人</div>
               <div className="flex items-center gap-1.5 text-neutral-700">
                 <User className="w-3.5 h-3.5 text-neutral-400" />
-                {o.dispatcher || '--'}
+                {dispatcher || '--'}
               </div>
             </div>
           </div>
-          {o.remark && (
+          {remark && (
             <div>
               <div className="text-[11px] text-neutral-400 mb-1">派单备注</div>
               <div className="text-sm text-neutral-700 bg-white rounded-md p-2.5 border border-neutral-200">
-                {o.remark}
+                {remark}
               </div>
             </div>
           )}

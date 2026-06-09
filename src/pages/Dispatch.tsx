@@ -23,6 +23,7 @@ import Empty from '@/components/Empty';
 import Button from '@/components/ui/Button';
 import Badge from '@/components/ui/Badge';
 import DiseaseDetail from '@/components/disease/DiseaseDetail';
+import OrderClosureKanban, { type PipelineKey } from '@/components/order/OrderClosureKanban';
 import { useOrderStore } from '@/store/orderStore';
 import { useDiseaseStore } from '@/store/diseaseStore';
 import { useDictStore } from '@/store/dictStore';
@@ -67,6 +68,8 @@ export default function Dispatch() {
   const [assignOrderId, setAssignOrderId] = useState<string | null>(null);
   const [viewDiseaseId, setViewDiseaseId] = useState<string | null>(null);
   const [highlightOrderId, setHighlightOrderId] = useState<string | null>(null);
+  const [kanbanStage, setKanbanStage] = useState<PipelineKey | null>(null);
+  const [kanbanStatuses, setKanbanStatuses] = useState<OrderStatus[]>([]);
 
   const diseaseIdParam = searchParams.get('diseaseId');
 
@@ -117,7 +120,14 @@ export default function Dispatch() {
   }, [orders]);
 
   const filteredOrders = useMemo(() => {
-    const list = activeTab === 'all' ? orders : orders.filter((o) => o.status === activeTab);
+    let list: WorkOrder[];
+    if (kanbanStage && kanbanStatuses.length > 0) {
+      list = orders.filter((o) => kanbanStatuses.includes(o.status));
+    } else if (activeTab === 'all') {
+      list = orders;
+    } else {
+      list = orders.filter((o) => o.status === activeTab);
+    }
     if (!searchKeyword.trim()) return list;
     const kw = searchKeyword.toLowerCase();
     return list.filter((o) => {
@@ -128,7 +138,15 @@ export default function Dispatch() {
       const text = `${roadName} ${disease.stakeNo} ${disease.description} ${typeName} ${o.id}`.toLowerCase();
       return text.includes(kw);
     });
-  }, [activeTab, orders, searchKeyword, diseases, getRoadName, getTypeName]);
+  }, [activeTab, orders, searchKeyword, diseases, getRoadName, getTypeName, kanbanStage, kanbanStatuses]);
+
+  const handleStageClick = (key: PipelineKey | null, statuses: OrderStatus[]) => {
+    setKanbanStage(key);
+    setKanbanStatuses(key ? statuses : []);
+    if (key && statuses.length === 1) {
+      setActiveTab(statuses[0]);
+    }
+  };
 
   const handleAssign = (orderId: string) => {
     setAssignOrderId(orderId);
@@ -143,6 +161,11 @@ export default function Dispatch() {
   return (
     <PageContainer title="工单调度" subtitle="统一管理养护工单的派发、跟踪与调度">
       <div className="space-y-6">
+        <OrderClosureKanban
+          selectedStage={kanbanStage}
+          onStageClick={handleStageClick}
+        />
+
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
           {statConfigs.map((cfg) => (
             <StatCard
@@ -204,7 +227,21 @@ export default function Dispatch() {
                   <span className="ml-2 text-xs text-neutral-400 font-normal">
                     共 {filteredOrders.length} 条
                   </span>
+                  {kanbanStage && (
+                    <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-primary-50 text-primary-700 border border-primary-100 text-[11px] font-medium">
+                      看板筛选中
+                    </span>
+                  )}
                 </h3>
+                {kanbanStage && (
+                  <button
+                    type="button"
+                    onClick={() => handleStageClick(null, [])}
+                    className="text-xs text-neutral-500 hover:text-primary-600 transition-colors"
+                  >
+                    清除筛选
+                  </button>
+                )}
               </div>
               {filteredOrders.length === 0 ? (
                 <div className="h-64">

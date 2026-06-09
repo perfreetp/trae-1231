@@ -62,18 +62,20 @@ export default function AssignModal({ open, orderId, onOpenChange, onSuccess }: 
 
   const canConfirm = teamId && plannedStart && plannedEnd;
 
+  const isRework = order?.status === 'rejected';
+
   return (
     <Modal
       open={open}
       onOpenChange={onOpenChange}
-      title="工单派单"
+      title={isRework ? '返工工单重新派单' : '工单派单'}
       description={
         order && disease
-          ? `${getRoadName(disease.roadId)} · ${disease.stakeNo} · ${order.id}`
+          ? `${getRoadName(disease.roadId)} · ${disease.stakeNo} · ${order.id}${isRework ? '（退回后重新派单）' : ''}`
           : undefined
       }
       size="md"
-      confirmText="确认派单"
+      confirmText={isRework ? '确认重新派单' : '确认派单'}
       confirmLoading={submitting}
       confirmDisabled={!canConfirm}
       onConfirm={handleConfirm}

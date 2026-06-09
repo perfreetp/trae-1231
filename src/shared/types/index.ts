@@ -66,6 +66,16 @@ export interface Team {
   workLoad: number;
 }
 
+export interface DispatchRecord {
+  round: number;
+  teamId: string;
+  assignedAt: string;
+  plannedStart: string | null;
+  plannedEnd: string | null;
+  dispatcher: string | null;
+  remark: string | null;
+}
+
 export interface WorkOrder {
   id: string;
   diseaseId: string;
@@ -77,6 +87,7 @@ export interface WorkOrder {
   plannedEnd: string | null;
   dispatcher: string | null;
   remark: string | null;
+  dispatchHistory: DispatchRecord[];
 }
 
 export interface MaterialUsage {

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { WorkOrder, OrderStatus, DiseaseLevelCode } from '@/shared/types';
+import type { WorkOrder, OrderStatus, DiseaseLevelCode, DispatchRecord } from '@/shared/types';
 import { genOrders } from '@/utils/mock';
 import { genId } from '@/utils/format';
 import { useDiseaseStore } from './diseaseStore';
@@ -48,6 +48,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       plannedEnd: null,
       dispatcher: null,
       remark: null,
+      dispatchHistory: [],
     };
     set((s) => ({ orders: [newOrder, ...s.orders] }));
     return newOrder;
@@ -60,21 +61,34 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     if (order) {
       updateDisease(order.diseaseId, { status: 'assigned' });
     }
+    const now = new Date().toISOString();
     set((s) => ({
-      orders: s.orders.map((o) =>
-        o.id === orderId
-          ? {
-              ...o,
-              teamId,
-              status: 'assigned',
-              assignedAt: new Date().toISOString(),
-              plannedStart,
-              plannedEnd,
-              dispatcher: '调度员',
-              remark,
-            }
-          : o
-      ),
+      orders: s.orders.map((o) => {
+        if (o.id !== orderId) return o;
+        const nextHistory: DispatchRecord[] = [
+          ...o.dispatchHistory,
+          {
+            round: o.dispatchHistory.length + 1,
+            teamId,
+            assignedAt: now,
+            plannedStart,
+            plannedEnd,
+            dispatcher: '调度员',
+            remark,
+          },
+        ];
+        return {
+          ...o,
+          teamId,
+          status: 'assigned',
+          assignedAt: now,
+          plannedStart,
+          plannedEnd,
+          dispatcher: '调度员',
+          remark,
+          dispatchHistory: nextHistory,
+        };
+      }),
     }));
   },
 

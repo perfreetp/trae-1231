@@ -3,7 +3,7 @@ import { forwardRef } from 'react';
 import { Loader2, type LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost';
+type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'warning' | 'ghost';
 type ButtonSize = 'sm' | 'md' | 'lg';
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -41,6 +41,14 @@ const variantStyles: Record<ButtonVariant, string> = {
     'active:bg-danger-800 active:border-danger-800',
     'focus:ring-2 focus:ring-danger-500 focus:ring-offset-2',
     'disabled:bg-danger-300 disabled:border-danger-300 disabled:text-white'
+  ),
+  warning: cn(
+    'bg-amber-500 text-white',
+    'border border-amber-500',
+    'hover:bg-amber-600 hover:border-amber-600 hover:shadow-sm',
+    'active:bg-amber-700 active:border-amber-700',
+    'focus:ring-2 focus:ring-amber-400 focus:ring-offset-2',
+    'disabled:bg-amber-300 disabled:border-amber-300 disabled:text-white'
   ),
   ghost: cn(
     'bg-transparent text-neutral-600',

@@ -136,9 +136,10 @@ export function genDiseases(count = 200): Disease[] {
 export function genOrders(diseases: Disease[]): WorkOrder[] {
   const orders: WorkOrder[] = [];
   diseases.forEach((d, idx) => {
+    const id = `o${idx.toString().padStart(3, '0')}`;
     if (d.status === 'pending') {
       orders.push({
-        id: `o${idx.toString().padStart(3, '0')}`,
+        id,
         diseaseId: d.id,
         teamId: '',
         status: 'unassigned',
@@ -148,26 +149,93 @@ export function genOrders(diseases: Disease[]): WorkOrder[] {
         plannedEnd: null,
         dispatcher: null,
         remark: null,
+        dispatchHistory: [],
       });
       return;
     }
-    const teamId = pick(MOCK_TEAMS).id;
-    const assignedAt = new Date(new Date(d.reportedAt).getTime() + rndInt(30, 600) * 60000).toISOString();
-    const plannedStart = new Date(new Date(assignedAt).getTime() + rndInt(30, 720) * 60000).toISOString();
-    const plannedEnd = new Date(new Date(plannedStart).getTime() + rndInt(120, 1440) * 60000).toISOString();
+    const firstTeamId = pick(MOCK_TEAMS).id;
+    const firstDispatcher = pick(['调度-王主任', '调度-刘主任', '调度-陈主管']);
+    const firstAssignedAt = new Date(new Date(d.reportedAt).getTime() + rndInt(30, 600) * 60000).toISOString();
+    const firstPlannedStart = new Date(new Date(firstAssignedAt).getTime() + rndInt(30, 720) * 60000).toISOString();
+    const firstPlannedEnd = new Date(new Date(firstPlannedStart).getTime() + rndInt(120, 1440) * 60000).toISOString();
+    const firstRemark = pick(['尽快处置', '注意安全防护', null, null]);
+
     let status = d.status === 'accepted' ? 'accepted' : d.status;
     if (status === 'pending') status = 'assigned';
+
+    const dispatchHistory = [
+      {
+        round: 1,
+        teamId: firstTeamId,
+        assignedAt: firstAssignedAt,
+        plannedStart: firstPlannedStart,
+        plannedEnd: firstPlannedEnd,
+        dispatcher: firstDispatcher,
+        remark: firstRemark,
+      },
+    ];
+
+    if (status === 'rejected') {
+      const reworkRound = pick([1, 2]);
+      if (reworkRound === 2) {
+        const secondTeamId = pick(MOCK_TEAMS.filter((t) => t.id !== firstTeamId)).id;
+        const secondAssignedAt = new Date(new Date(firstAssignedAt).getTime() + rndInt(60 * 48, 60 * 96) * 60000).toISOString();
+        const secondPlannedStart = new Date(new Date(secondAssignedAt).getTime() + rndInt(30, 360) * 60000).toISOString();
+        const secondPlannedEnd = new Date(new Date(secondPlannedStart).getTime() + rndInt(120, 1440) * 60000).toISOString();
+        dispatchHistory.push({
+          round: 2,
+          teamId: secondTeamId,
+          assignedAt: secondAssignedAt,
+          plannedStart: secondPlannedStart,
+          plannedEnd: secondPlannedEnd,
+          dispatcher: '调度-王主任',
+          remark: '上次验收被退回，本次请重点关注压实度和平整度',
+        });
+        orders.push({
+          id,
+          diseaseId: d.id,
+          teamId: secondTeamId,
+          status: 'assigned',
+          priority: d.levelId,
+          assignedAt: secondAssignedAt,
+          plannedStart: secondPlannedStart,
+          plannedEnd: secondPlannedEnd,
+          dispatcher: '调度-王主任',
+          remark: '上次验收被退回，本次请重点关注压实度和平整度',
+          dispatchHistory,
+        });
+        const updateTarget = diseases.find((x) => x.id === d.id);
+        if (updateTarget) (updateTarget as any).status = 'assigned';
+      } else {
+        orders.push({
+          id,
+          diseaseId: d.id,
+          teamId: '',
+          status: 'rejected',
+          priority: d.levelId,
+          assignedAt: null,
+          plannedStart: null,
+          plannedEnd: null,
+          dispatcher: null,
+          remark: null,
+          dispatchHistory,
+        });
+      }
+      return;
+    }
+
     orders.push({
-      id: `o${idx.toString().padStart(3, '0')}`,
+      id,
       diseaseId: d.id,
-      teamId,
+      teamId: firstTeamId,
       status: status as any,
       priority: d.levelId,
-      assignedAt,
-      plannedStart,
-      plannedEnd,
-      dispatcher: pick(['调度-王主任', '调度-刘主任', '调度-陈主管']),
-      remark: pick(['尽快处置', '注意安全防护', null, null]),
+      assignedAt: firstAssignedAt,
+      plannedStart: firstPlannedStart,
+      plannedEnd: firstPlannedEnd,
+      dispatcher: firstDispatcher,
+      remark: firstRemark,
+      dispatchHistory,
     });
   });
   return orders;
