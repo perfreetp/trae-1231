@@ -4,6 +4,7 @@ import { genDiseases } from '@/utils/mock';
 import { refreshWarningFlags } from '@/utils/warning';
 import { genId } from '@/utils/format';
 import { useDictStore } from './dictStore';
+import { useOrderStore } from './orderStore';
 
 export interface DiseaseFilters {
   keyword: string;
@@ -101,6 +102,7 @@ export const useDiseaseStore = create<DiseaseState>((set, get) => ({
       warningFlag: 'none',
     };
     set((s) => ({ diseases: [newD, ...s.diseases] }));
+    useOrderStore.getState().addWorkOrder(newD.id, newD.levelId);
   },
 
   updateDisease: (id, patch) =>

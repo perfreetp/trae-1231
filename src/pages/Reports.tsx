@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   Activity,
   CheckCircle2,
@@ -164,6 +164,13 @@ function StackedLevelChart({
 
 export default function Reports() {
   const [timeRange, setTimeRange] = useState<TimeRange>('month');
+
+  useEffect(() => {
+    useDiseaseStore.getState();
+    useOrderStore.getState()._ensureInit();
+    useReviewStore.getState()._ensureInit();
+    useAcceptanceStore.getState()._ensureInit();
+  }, []);
 
   const diseases = useDiseaseStore((s) => s.diseases);
   const orders = useOrderStore((s) => s.orders);

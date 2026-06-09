@@ -51,15 +51,15 @@ export default function Dashboard() {
   }, [diseases, getRoadName, getTypeName, getLevelName]);
 
   const handleEditDisease = (disease: Disease) => {
-    navigate(`/diseases?editId=${disease.id}`);
+    navigate(`/ledger?editId=${disease.id}`);
   };
 
   const handleViewDisease = (disease: Disease) => {
-    navigate(`/diseases?viewId=${disease.id}`);
+    navigate(`/ledger?viewId=${disease.id}`);
   };
 
   const handleCreateOrder = (disease: Disease) => {
-    navigate(`/orders?diseaseId=${disease.id}`);
+    navigate(`/dispatch?diseaseId=${disease.id}`);
   };
 
   return (

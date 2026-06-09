@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   Search,
   Filter,
@@ -12,6 +12,7 @@ import {
   User,
   CheckCircle2,
   ChevronRight,
+  RefreshCw,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import PageContainer from '@/components/layout/PageContainer';
@@ -25,6 +26,7 @@ import { useReviewStore } from '@/store/reviewStore';
 import { useOrderStore } from '@/store/orderStore';
 import { useDiseaseStore } from '@/store/diseaseStore';
 import { useDictStore } from '@/store/dictStore';
+import { useAcceptanceStore } from '@/store/acceptanceStore';
 import type { Disease, WorkOrder, DiseaseLevelCode } from '@/shared/types';
 import {
   DISEASE_LEVEL_MAP,
@@ -48,14 +50,21 @@ const levelBadgeVariants: Record<DiseaseLevelCode, 'success' | 'warning' | 'dang
 };
 
 export default function Review() {
-  const { getPendingReviewOrders, selectedOrderId, setSelectedOrderId, reviews, getReviewByOrderId } = useReviewStore();
+  const { getPendingReviewOrders, selectedOrderId, setSelectedOrderId, reviews, getReviewByOrderId, getAllReviewsByOrderId } = useReviewStore();
   const { orders } = useOrderStore();
   const { diseases } = useDiseaseStore();
   const { roads, teams, getRoadName, getTypeName, getTeamName } = useDictStore();
+  const { getReworkCount } = useAcceptanceStore();
 
   const [searchKeyword, setSearchKeyword] = useState('');
   const [filterRoad, setFilterRoad] = useState('');
   const [filterTeam, setFilterTeam] = useState('');
+
+  useEffect(() => {
+    useReviewStore.getState()._ensureInit();
+    useOrderStore.getState()._ensureInit();
+    useAcceptanceStore.getState()._ensureInit();
+  }, []);
 
   const pendingOrders = useMemo(() => {
     const list = getPendingReviewOrders();
@@ -63,15 +72,17 @@ export default function Review() {
       .map(({ orderId, diseaseId }) => {
         const order = orders.find((o) => o.id === orderId);
         const disease = diseases.find((d) => d.id === diseaseId);
-        return { orderId, diseaseId, order, disease };
+        const reworkCount = order ? getReworkCount(order.id) : 0;
+        return { orderId, diseaseId, order, disease, reworkCount };
       })
       .filter((item) => item.order && item.disease) as {
       orderId: string;
       diseaseId: string;
       order: WorkOrder;
       disease: Disease;
+      reworkCount: number;
     }[];
-  }, [getPendingReviewOrders, orders, diseases]);
+  }, [getPendingReviewOrders, orders, diseases, getReworkCount]);
 
   const filteredPending = useMemo(() => {
     let list = pendingOrders;
@@ -113,7 +124,9 @@ export default function Review() {
     return { order, disease };
   }, [selectedOrderId, orders, diseases]);
 
-  const historyReview = selectedOrderId ? getReviewByOrderId(selectedOrderId) : undefined;
+  const historyReviews = selectedOrderId ? getAllReviewsByOrderId(selectedOrderId) : [];
+  const latestReview = historyReviews[0];
+  const selectedReworkCount = selectedOrderId ? getReworkCount(selectedOrderId) : 0;
 
   const roadOptions: SelectOption[] = roads.map((r) => ({
     value: r.id,
@@ -199,7 +212,7 @@ export default function Review() {
                           >
                             <div className="flex items-start justify-between gap-2 mb-2">
                               <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-2 mb-1">
+                                <div className="flex items-center gap-1.5 mb-1 flex-wrap">
                                   <Badge
                                     variant={levelBadgeVariants[item.disease.levelId]}
                                     size="sm"
@@ -207,6 +220,11 @@ export default function Review() {
                                   >
                                     {DISEASE_LEVEL_MAP[item.disease.levelId]}
                                   </Badge>
+                                  {item.reworkCount > 0 && (
+                                    <Badge variant="danger" size="sm" icon={<RefreshCw className="w-3 h-3" />}>
+                                      返工×{item.reworkCount}
+                                    </Badge>
+                                  )}
                                   <span className="text-[10px] font-mono text-neutral-400">
                                     {item.orderId}
                                   </span>
@@ -271,18 +289,25 @@ export default function Review() {
                 <div className="bg-white rounded-lg border border-neutral-200 overflow-hidden">
                   <div className="px-5 py-4 border-b border-neutral-200 flex items-center justify-between">
                     <div>
-                      <h3 className="text-base font-semibold text-neutral-900">
+                      <h3 className="text-base font-semibold text-neutral-900 flex items-center gap-2 flex-wrap">
                         病害基本信息
+                        {selectedReworkCount > 0 && (
+                          <Badge variant="danger" size="sm" icon={<RefreshCw className="w-3.5 h-3.5" />}>
+                            返工工单 · 已退回{selectedReworkCount}次
+                          </Badge>
+                        )}
                       </h3>
                       <p className="mt-0.5 text-xs text-neutral-500">
                         {selectedOrder.order.id} ·{' '}
                         <span
                           className={cn(
                             'inline-block px-1.5 py-0.5 rounded text-[10px] font-medium border',
-                            ORDER_STATUS_MAP[selectedOrder.order.status].color
+                            selectedOrder.order.status === 'rejected'
+                              ? 'bg-red-50 text-red-700 border-red-200'
+                              : ORDER_STATUS_MAP[selectedOrder.order.status].color
                           )}
                         >
-                          {ORDER_STATUS_MAP[selectedOrder.order.status].label}
+                          {selectedOrder.order.status === 'rejected' ? '整改中' : ORDER_STATUS_MAP[selectedOrder.order.status].label}
                         </span>
                       </p>
                     </div>
@@ -412,87 +437,102 @@ export default function Review() {
                   </div>
                 </div>
 
-                {historyReview && (
-                  <div className="bg-white rounded-lg border border-neutral-200 p-5">
-                    <h3 className="text-base font-semibold text-neutral-900 mb-4 flex items-center gap-2">
+                {historyReviews.length > 0 && (
+                  <div className="bg-white rounded-lg border border-neutral-200 p-5 space-y-6">
+                    <h3 className="text-base font-semibold text-neutral-900 flex items-center gap-2">
                       <CheckCircle2 className="w-5 h-5 text-success-500" />
                       历史复核记录
+                      <span className="text-xs text-neutral-400 font-normal">
+                        共 {historyReviews.length} 次
+                      </span>
                     </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
-                      <div>
-                        <div className="text-xs text-neutral-500 mb-1">到场时间</div>
-                        <div className="font-medium text-neutral-900">
-                          {formatDateTime(historyReview.arrivedAt)}
+                    {historyReviews.map((hr, idx) => {
+                      const round = historyReviews.length - idx;
+                      return (
+                        <div key={hr.id} className="border-t border-neutral-100 pt-5 first:border-t-0 first:pt-0">
+                          <div className="flex items-center gap-2 mb-4">
+                            <Badge variant="info" size="sm">
+                              第 {round} 轮处置
+                            </Badge>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
+                            <div>
+                              <div className="text-xs text-neutral-500 mb-1">到场时间</div>
+                              <div className="font-medium text-neutral-900 tabular-nums">
+                                {formatDateTime(hr.arrivedAt)}
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-xs text-neutral-500 mb-1">完成时间</div>
+                              <div className="font-medium text-neutral-900 tabular-nums">
+                                {formatDateTime(hr.completedAt)}
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-xs text-neutral-500 mb-1">处置人员</div>
+                              <div className="font-medium text-neutral-900">
+                                {hr.workers.join('、')}
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-xs text-neutral-500 mb-1">是否封路</div>
+                              <div className="font-medium text-neutral-900">
+                                {hr.roadClosed ? '是' : '否'}
+                              </div>
+                            </div>
+                          </div>
+                          {hr.disposalMeasures && (
+                            <div className="mt-4 pt-4 border-t border-neutral-100">
+                              <div className="text-xs text-neutral-500 mb-2">处置措施</div>
+                              <div className="text-sm text-neutral-700 leading-relaxed bg-neutral-50 rounded-md p-3">
+                                {hr.disposalMeasures}
+                              </div>
+                            </div>
+                          )}
+                          {hr.materials.length > 0 && (
+                            <div className="mt-4 pt-4 border-t border-neutral-100">
+                              <div className="text-xs text-neutral-500 mb-2">材料用量</div>
+                              <div className="overflow-hidden rounded-md border border-neutral-200">
+                                <table className="w-full text-sm">
+                                  <thead className="bg-neutral-50">
+                                    <tr>
+                                      <th className="px-3 py-2 text-left text-xs font-medium text-neutral-600">
+                                        材料名称
+                                      </th>
+                                      <th className="px-3 py-2 text-left text-xs font-medium text-neutral-600">
+                                        单位
+                                      </th>
+                                      <th className="px-3 py-2 text-right text-xs font-medium text-neutral-600">
+                                        数量
+                                      </th>
+                                      <th className="px-3 py-2 text-right text-xs font-medium text-neutral-600">
+                                        单价
+                                      </th>
+                                      <th className="px-3 py-2 text-right text-xs font-medium text-neutral-600">
+                                        小计
+                                      </th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-neutral-100">
+                                    {hr.materials.map((m) => (
+                                      <tr key={m.id}>
+                                        <td className="px-3 py-2 text-neutral-800">{m.materialName}</td>
+                                        <td className="px-3 py-2 text-neutral-600">{m.unit}</td>
+                                        <td className="px-3 py-2 text-right text-neutral-800 tabular-nums">{m.quantity}</td>
+                                        <td className="px-3 py-2 text-right text-neutral-600 tabular-nums">¥{m.unitPrice.toFixed(2)}</td>
+                                        <td className="px-3 py-2 text-right font-medium text-neutral-900 tabular-nums">
+                                          ¥{m.subtotal.toFixed(2)}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      </div>
-                      <div>
-                        <div className="text-xs text-neutral-500 mb-1">完成时间</div>
-                        <div className="font-medium text-neutral-900">
-                          {formatDateTime(historyReview.completedAt)}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-xs text-neutral-500 mb-1">处置人员</div>
-                        <div className="font-medium text-neutral-900">
-                          {historyReview.workers.join('、')}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-xs text-neutral-500 mb-1">是否封路</div>
-                        <div className="font-medium text-neutral-900">
-                          {historyReview.roadClosed ? '是' : '否'}
-                        </div>
-                      </div>
-                    </div>
-                    {historyReview.disposalMeasures && (
-                      <div className="mt-4 pt-4 border-t border-neutral-100">
-                        <div className="text-xs text-neutral-500 mb-2">处置措施</div>
-                        <div className="text-sm text-neutral-700 leading-relaxed bg-neutral-50 rounded-md p-3">
-                          {historyReview.disposalMeasures}
-                        </div>
-                      </div>
-                    )}
-                    {historyReview.materials.length > 0 && (
-                      <div className="mt-4 pt-4 border-t border-neutral-100">
-                        <div className="text-xs text-neutral-500 mb-2">材料用量</div>
-                        <div className="overflow-hidden rounded-md border border-neutral-200">
-                          <table className="w-full text-sm">
-                            <thead className="bg-neutral-50">
-                              <tr>
-                                <th className="px-3 py-2 text-left text-xs font-medium text-neutral-600">
-                                  材料名称
-                                </th>
-                                <th className="px-3 py-2 text-left text-xs font-medium text-neutral-600">
-                                  单位
-                                </th>
-                                <th className="px-3 py-2 text-right text-xs font-medium text-neutral-600">
-                                  数量
-                                </th>
-                                <th className="px-3 py-2 text-right text-xs font-medium text-neutral-600">
-                                  单价
-                                </th>
-                                <th className="px-3 py-2 text-right text-xs font-medium text-neutral-600">
-                                  小计
-                                </th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-neutral-100">
-                              {historyReview.materials.map((m) => (
-                                <tr key={m.id}>
-                                  <td className="px-3 py-2 text-neutral-800">{m.materialName}</td>
-                                  <td className="px-3 py-2 text-neutral-600">{m.unit}</td>
-                                  <td className="px-3 py-2 text-right text-neutral-800">{m.quantity}</td>
-                                  <td className="px-3 py-2 text-right text-neutral-600">¥{m.unitPrice}</td>
-                                  <td className="px-3 py-2 text-right font-medium text-neutral-900">
-                                    ¥{m.subtotal.toFixed(2)}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    )}
+                      );
+                    })}
                   </div>
                 )}
 

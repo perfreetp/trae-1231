@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   ClipboardList,
   Clock,
@@ -8,6 +9,7 @@ import {
   CircleCheck,
   Search,
   Eye,
+  AlertCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import PageContainer from '@/components/layout/PageContainer';
@@ -20,9 +22,11 @@ import Input from '@/components/ui/Input';
 import Empty from '@/components/Empty';
 import Button from '@/components/ui/Button';
 import Badge from '@/components/ui/Badge';
+import DiseaseDetail from '@/components/disease/DiseaseDetail';
 import { useOrderStore } from '@/store/orderStore';
 import { useDiseaseStore } from '@/store/diseaseStore';
 import { useDictStore } from '@/store/dictStore';
+import { useAcceptanceStore } from '@/store/acceptanceStore';
 import type { OrderStatus, WorkOrder } from '@/shared/types';
 import { ORDER_STATUS_MAP } from '@/utils/constants';
 
@@ -32,6 +36,7 @@ const tabItems: { value: OrderStatus | 'all'; label: string }[] = [
   { value: 'assigned', label: '已派单' },
   { value: 'processing', label: '处置中' },
   { value: 'reviewed', label: '待验收' },
+  { value: 'rejected', label: '整改中' },
   { value: 'accepted', label: '已完成' },
 ];
 
@@ -41,13 +46,17 @@ const statConfigs = [
   { key: 'assigned', label: '已派单', icon: Send, iconBg: 'orange', color: 'orange' },
   { key: 'processing', label: '处置中', icon: Wrench, iconBg: 'cyan', color: 'cyan' },
   { key: 'reviewed', label: '待验收', icon: CheckCircle2, iconBg: 'green', color: 'green' },
+  { key: 'rejected', label: '整改中', icon: AlertCircle, iconBg: 'red', color: 'red' },
   { key: 'accepted', label: '已完成', icon: CircleCheck, iconBg: 'green', color: 'green' },
 ];
 
 export default function Dispatch() {
+  const [searchParams] = useSearchParams();
   const orders = useOrderStore((s) => s.orders);
   const activeTab = useOrderStore((s) => s.activeTab);
   const setActiveTab = useOrderStore((s) => s.setActiveTab);
+  const acceptanceRecords = useAcceptanceStore((s) => s.records);
+  const getReworkCount = useAcceptanceStore((s) => s.getReworkCount);
 
   const diseases = useDiseaseStore((s) => s.diseases);
   const getRoadName = useDictStore((s) => s.getRoadName);
@@ -56,7 +65,38 @@ export default function Dispatch() {
   const [searchKeyword, setSearchKeyword] = useState('');
   const [assignModalOpen, setAssignModalOpen] = useState(false);
   const [assignOrderId, setAssignOrderId] = useState<string | null>(null);
-  const [viewOrder, setViewOrder] = useState<WorkOrder | null>(null);
+  const [viewDiseaseId, setViewDiseaseId] = useState<string | null>(null);
+  const [highlightOrderId, setHighlightOrderId] = useState<string | null>(null);
+
+  const diseaseIdParam = searchParams.get('diseaseId');
+
+  useEffect(() => {
+    useOrderStore.getState()._ensureInit();
+    useAcceptanceStore.getState()._ensureInit();
+  }, []);
+
+  useEffect(() => {
+    if (!diseaseIdParam) return;
+    const target = orders.find((o) => o.diseaseId === diseaseIdParam);
+    if (target) {
+      setActiveTab(target.status);
+      setHighlightOrderId(target.id);
+      const t = setTimeout(() => setHighlightOrderId(null), 3000);
+      return () => clearTimeout(t);
+    } else {
+      setActiveTab('unassigned');
+    }
+  }, [diseaseIdParam, orders, setActiveTab]);
+
+  const reworkCountMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    acceptanceRecords.forEach((r) => {
+      if (r.result === 'rejected') {
+        map[r.orderId] = (map[r.orderId] || 0) + 1;
+      }
+    });
+    return map;
+  }, [acceptanceRecords]);
 
   const stats = useMemo(() => {
     const result: Record<string, number> = {
@@ -65,6 +105,7 @@ export default function Dispatch() {
       assigned: 0,
       processing: 0,
       reviewed: 0,
+      rejected: 0,
       accepted: 0,
     };
     orders.forEach((o) => {
@@ -96,85 +137,7 @@ export default function Dispatch() {
 
   const handleView = (orderId: string) => {
     const order = orders.find((o) => o.id === orderId);
-    if (order) setViewOrder(order);
-  };
-
-  const renderViewDetail = () => {
-    if (!viewOrder) return null;
-    const disease = diseases.find((d) => d.id === viewOrder.diseaseId);
-    if (!disease) return null;
-
-    return (
-      <div
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 animate-in fade-in duration-200"
-        onClick={() => setViewOrder(null)}
-      >
-        <div
-          className="bg-white rounded-xl shadow-2xl w-full max-w-xl mx-4 overflow-hidden animate-in zoom-in-95 duration-200"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-200">
-            <div>
-              <h3 className="text-lg font-semibold text-neutral-900">工单详情</h3>
-              <p className="mt-0.5 text-xs text-neutral-500">{viewOrder.id}</p>
-            </div>
-            <Button variant="ghost" size="sm" onClick={() => setViewOrder(null)}>
-              关闭
-            </Button>
-          </div>
-          <div className="px-6 py-5 space-y-4 max-h-[60vh] overflow-y-auto">
-            <div className="flex items-center gap-2">
-              <span
-                className={cn(
-                  'inline-flex items-center justify-center h-5 px-2 text-[11px] font-medium rounded-md border',
-                  ORDER_STATUS_MAP[viewOrder.status].color
-                )}
-              >
-                {ORDER_STATUS_MAP[viewOrder.status].label}
-              </span>
-              <Badge variant={viewOrder.priority === 'critical' ? 'danger' : viewOrder.priority === 'severe' ? 'warning' : viewOrder.priority === 'moderate' ? 'warning' : 'success'} size="sm" dot>
-                {useDictStore.getState().getLevelName(viewOrder.priority)}
-              </Badge>
-            </div>
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <div className="text-xs text-neutral-500 mb-1">道路</div>
-                <div className="font-medium text-neutral-900">{getRoadName(disease.roadId)}</div>
-              </div>
-              <div>
-                <div className="text-xs text-neutral-500 mb-1">桩号</div>
-                <div className="font-medium text-neutral-900">{disease.stakeNo}</div>
-              </div>
-              <div>
-                <div className="text-xs text-neutral-500 mb-1">病害类型</div>
-                <div className="font-medium text-neutral-900">{getTypeName(disease.typeId)}</div>
-              </div>
-              <div>
-                <div className="text-xs text-neutral-500 mb-1">面积</div>
-                <div className="font-medium text-neutral-900">{disease.areaM2} m²</div>
-              </div>
-            </div>
-            <div>
-              <div className="text-xs text-neutral-500 mb-1">病害描述</div>
-              <div className="text-sm text-neutral-700 leading-relaxed bg-neutral-50 rounded-md p-3">
-                {disease.description}
-              </div>
-            </div>
-            {viewOrder.remark && (
-              <div>
-                <div className="text-xs text-neutral-500 mb-1">派单备注</div>
-                <div className="text-sm text-neutral-700 leading-relaxed bg-neutral-50 rounded-md p-3">
-                  {viewOrder.remark}
-                </div>
-              </div>
-            )}
-          </div>
-          <div className="px-6 py-4 border-t border-neutral-200 flex justify-end">
-            <Button onClick={() => setViewOrder(null)}>确定</Button>
-          </div>
-        </div>
-      </div>
-    );
+    if (order) setViewDiseaseId(order.diseaseId);
   };
 
   return (
@@ -253,8 +216,10 @@ export default function Dispatch() {
                     <OrderCard
                       key={order.id}
                       order={order}
-                      onAssign={order.status === 'unassigned' ? handleAssign : undefined}
+                      onAssign={order.status === 'unassigned' || order.status === 'rejected' ? handleAssign : undefined}
                       onView={handleView}
+                      highlight={highlightOrderId === order.id}
+                      reworkCount={reworkCountMap[order.id] || 0}
                     />
                   ))}
                 </div>
@@ -277,7 +242,11 @@ export default function Dispatch() {
         onOpenChange={setAssignModalOpen}
       />
 
-      {renderViewDetail()}
+      <DiseaseDetail
+        open={!!viewDiseaseId}
+        diseaseId={viewDiseaseId}
+        onClose={() => setViewDiseaseId(null)}
+      />
     </PageContainer>
   );
 }

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   ClipboardCheck,
   Clock,
@@ -52,6 +52,12 @@ export default function Acceptance() {
   const [activeTab, setActiveTab] = useState<string>('pending');
   const [showSuccess, setShowSuccess] = useState(false);
   const [successResult, setSuccessResult] = useState<'passed' | 'rejected' | null>(null);
+
+  useEffect(() => {
+    useAcceptanceStore.getState()._ensureInit();
+    useOrderStore.getState()._ensureInit();
+    useReviewStore.getState()._ensureInit();
+  }, []);
 
   const pendingList = useMemo<PendingItem[]>(() => {
     const pending = getPendingAcceptance();

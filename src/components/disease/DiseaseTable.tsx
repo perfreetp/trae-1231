@@ -130,7 +130,7 @@ export default function DiseaseTable({ onEdit, onView, className }: DiseaseTable
   };
 
   const handleCreateOrder = (disease: Disease) => {
-    navigate(`/orders?diseaseId=${disease.id}`);
+    navigate(`/dispatch?diseaseId=${disease.id}`);
   };
 
   const getTypeColor = (typeId: DiseaseTypeCode) => {

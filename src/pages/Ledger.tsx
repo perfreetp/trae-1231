@@ -16,7 +16,11 @@ import Select from '@/components/ui/Select';
 import Modal from '@/components/ui/Modal';
 import DiseaseTable from '@/components/disease/DiseaseTable';
 import DiseaseForm from '@/components/disease/DiseaseForm';
+import DiseaseDetail from '@/components/disease/DiseaseDetail';
 import { useDiseaseStore } from '@/store/diseaseStore';
+import { useOrderStore } from '@/store/orderStore';
+import { useReviewStore } from '@/store/reviewStore';
+import { useAcceptanceStore } from '@/store/acceptanceStore';
 import { useDictStore } from '@/store/dictStore';
 import { DISEASE_STATUS_MAP, DISEASE_LEVELS, DISEASE_TYPES } from '@/utils/constants';
 import { exportToCSV } from '@/utils/export';
@@ -50,6 +54,13 @@ export default function Ledger() {
   const [viewDisease, setViewDisease] = useState<Disease | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Disease | null>(null);
   const [batchMode, setBatchMode] = useState(false);
+
+  useEffect(() => {
+    useDiseaseStore.getState();
+    useOrderStore.getState()._ensureInit();
+    useReviewStore.getState()._ensureInit();
+    useAcceptanceStore.getState()._ensureInit();
+  }, []);
 
   useEffect(() => {
     const editId = searchParams.get('editId');
@@ -301,143 +312,11 @@ export default function Ledger() {
         editingDisease={editingDisease}
       />
 
-      <Modal
+      <DiseaseDetail
         open={!!viewDisease}
-        onOpenChange={(open) => {
-          if (!open) setViewDisease(null);
-        }}
-        title="病害详情"
-        size="lg"
-        showFooter={false}
-      >
-        {viewDisease && (
-          <div className="space-y-5">
-            {viewDisease.photoBefore && (
-              <div className="rounded-lg overflow-hidden border border-neutral-200 aspect-video bg-neutral-100">
-                <img
-                  src={viewDisease.photoBefore}
-                  alt="病害照片"
-                  className="w-full h-full object-cover"
-                />
-              </div>
-            )}
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <span className="text-xs text-neutral-400 block">ID</span>
-                <span className="font-mono text-neutral-800">{viewDisease.id}</span>
-              </div>
-              <div>
-                <span className="text-xs text-neutral-400 block">状态</span>
-                <span className="text-neutral-800">
-                  {DISEASE_STATUS_MAP[viewDisease.status].label}
-                </span>
-              </div>
-              <div>
-                <span className="text-xs text-neutral-400 block">道路</span>
-                <span className="text-neutral-800 font-medium">
-                  {getRoadName(viewDisease.roadId)}
-                </span>
-              </div>
-              <div>
-                <span className="text-xs text-neutral-400 block">桩号</span>
-                <span className="font-mono text-neutral-800">{viewDisease.stakeNo}</span>
-              </div>
-              <div>
-                <span className="text-xs text-neutral-400 block">类型</span>
-                <span className="text-neutral-800">
-                  {getTypeName(viewDisease.typeId)}
-                </span>
-              </div>
-              <div>
-                <span className="text-xs text-neutral-400 block">等级</span>
-                <span className="text-neutral-800">
-                  {getLevelName(viewDisease.levelId)}
-                </span>
-              </div>
-              <div>
-                <span className="text-xs text-neutral-400 block">面积</span>
-                <span className="tabular-nums text-neutral-800">
-                  {formatArea(viewDisease.areaM2)}
-                </span>
-              </div>
-              <div>
-                <span className="text-xs text-neutral-400 block">影响车道</span>
-                <span className="text-neutral-800">
-                  {viewDisease.affectedLanes.join('、') || '--'}
-                </span>
-              </div>
-              <div>
-                <span className="text-xs text-neutral-400 block">上报时间</span>
-                <span className="tabular-nums text-neutral-800">
-                  {formatDateTime(viewDisease.reportedAt)}
-                </span>
-              </div>
-              <div>
-                <span className="text-xs text-neutral-400 block">截止时间</span>
-                <span className="tabular-nums text-neutral-800">
-                  {formatDateTime(viewDisease.deadlineAt)}
-                </span>
-              </div>
-              <div>
-                <span className="text-xs text-neutral-400 block">上报人</span>
-                <span className="text-neutral-800">{viewDisease.reporter}</span>
-              </div>
-              <div>
-                <span className="text-xs text-neutral-400 flex items-center gap-1">
-                  <AlertTriangle className="w-3 h-3" />
-                  预警状态
-                </span>
-                <span
-                  className={cn(
-                    'font-medium',
-                    viewDisease.warningFlag === 'overdue' && 'text-red-600',
-                    viewDisease.warningFlag === 'approaching' && 'text-orange-600',
-                    viewDisease.warningFlag === 'none' && 'text-neutral-800'
-                  )}
-                >
-                  {viewDisease.warningFlag === 'overdue'
-                    ? '已逾期'
-                    : viewDisease.warningFlag === 'approaching'
-                    ? '即将到期'
-                    : '正常'}
-                </span>
-              </div>
-            </div>
-            {viewDisease.description && (
-              <div className="p-3 bg-neutral-50 rounded-lg border border-neutral-100">
-                <span className="text-xs text-neutral-400 block mb-1">描述</span>
-                <p className="text-sm text-neutral-700 whitespace-pre-wrap">
-                  {viewDisease.description}
-                </p>
-              </div>
-            )}
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <Button variant="secondary" onClick={() => setViewDisease(null)}>
-                关闭
-              </Button>
-              <Button
-                variant="primary"
-                onClick={() => {
-                  setEditingDisease(viewDisease);
-                  setViewDisease(null);
-                  setFormOpen(true);
-                }}
-              >
-                编辑
-              </Button>
-              <Button
-                variant="danger"
-                onClick={() => {
-                  setDeleteTarget(viewDisease);
-                  setViewDisease(null);
-                }}
-              >
-                删除
-              </Button>
-            </div>
-          </div>
-        )}
-      </Modal>
+        diseaseId={viewDisease?.id || null}
+        onClose={() => setViewDisease(null)}
+      />
 
       <Modal
         open={!!deleteTarget}
